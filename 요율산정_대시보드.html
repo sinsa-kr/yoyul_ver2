@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>협력업체 요율산정 시스템</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <style>
+    body { font-family:'Malgun Gothic','맑은 고딕',sans-serif; background:#f5ede0; }
+    .panel { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; }
+    .sec-hdr { font-size:12px; font-weight:700; color:#4a3828; margin-bottom:8px; }
+    .inp { padding:5px 8px; border:1px solid #ddd0bc; border-radius:6px; font-size:12px; outline:none; width:100%; box-sizing:border-box; }
+    .inp:focus { border-color:#b07d4e; }
+    .inp-r { padding:3px 6px; border:1px solid #ddd0bc; border-radius:4px; font-size:12px; text-align:right; outline:none; width:70px; }
+    .inp-r:focus { border-color:#b07d4e; }
+    .rate-row { display:flex; align-items:center; justify-content:space-between; padding:3px 0; }
+    .res-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:13px; border-bottom:1px solid #f0e8d8; }
+    .rstbtn { color:#a09080; background:none; border:none; cursor:pointer; font-size:12px; padding:1px 3px; border-radius:3px; }
+    .rstbtn:hover { color:#4a3828; background:#f0e8d8; }
+    .sum-card { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; text-align:center; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div style="background:#7a5c3e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(80,50,20,.25);">
+  <div>
+    <div style="font-size:18px;font-weight:700;">협력업체 요율산정 시스템</div>
+    <div style="font-size:11px;color:#d4b896;margin-top:2px;">업무별 교대근무 · 법정수당 · 4대보험 · 복리후생비 자동 반영</div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="exportExcel()" style="background:#4d7a5a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">📥 엑셀 다운로드</button>
+    <button onclick="copyResult()" style="background:#5a8a6a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">결과 복사</button>
+    <button onclick="openSlModal()" style="background:#5a6a9a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">📂 저장/불러오기</button>
+    <button onclick="resetAll()" style="background:#8a7a6a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">초기화</button>
+  </div>
+</div>
+
+<!-- SAVE/LOAD MODAL -->
+<div id="slModal" onclick="if(event.target===this)closeSlModal()" style="display:none;position:fixed;inset:0;background:rgba(60,40,20,0.55);z-index:2000;align-items:center;justify-content:center;">
+  <div style="background:#fdf9f3;border-radius:14px;width:520px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(60,30,10,.35);border:1px solid #d8c8a8;">
+    <div style="padding:14px 18px;border-bottom:1px solid #e8d8c0;display:flex;justify-content:space-between;align-items:center;background:#f5ede0;border-radius:14px 14px 0 0;">
+      <div style="font-size:15px;font-weight:700;color:#4a3828;">📂 요율 저장 / 불러오기</div>
+      <button onclick="closeSlModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#7a6a58;line-height:1;padding:2px 6px;">✕</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e8d8c0;background:#faf5ee;">
+      <div style="font-size:12px;font-weight:700;color:#5a3828;margin-bottom:6px;">현재 상태 저장</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="slSaveName" placeholder="저장 이름 (예: 경비·미화 2025년 1분기)"
+          style="flex:1;padding:6px 10px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;"
+          onkeydown="if(event.key==='Enter')doSave()">
+        <button onclick="doSave()" id="slSaveBtn" style="background:#7a5c3e;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">💾 저장</button>
+      </div>
+    </div>
+    <div style="padding:12px 18px 14px;flex:1;overflow-y:auto;">
+      <div style="font-size:12px;font-weight:700;color:#5a3828;margin-bottom:8px;">저장 목록</div>
+      <div id="slList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MIN WAGE ALERT -->
+<div id="minWageAlert" style="display:none;background:#fef0ec;border-left:4px solid #c86858;color:#9a3828;padding:8px 20px;font-size:13px;">
+  ⚠️ 일부 업무의 시급이 2025년 법정 최저시급(10,030원)보다 낮습니다.
+</div>
+
+<!-- MAIN 3-COLUMN -->
+<div style="display:grid;grid-template-columns:380px 1fr 280px;gap:14px;padding:14px;align-items:start;">
+
+  <!-- ===== LEFT PANEL ===== -->
+  <div style="display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 76px);overflow-y:auto;padding-right:2px;">
+
+    <!-- 업무 목록 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-hdr" style="margin-bottom:0;">👷 업무 목록</div>
+        <button onclick="addWork()" style="background:#a07040;color:white;border:none;padding:5px 13px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ 업무 추가</button>
+      </div>
+      <div id="workList"></div>
+    </div>
+
+    <!-- 법정 비율 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">⚙️ 법정 비율 설정</div>
+        <button onclick="toggleSec('ratesSec','ratesBtn')" id="ratesBtn" style="font-size:11px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;">접기</button>
+      </div>
+      <div id="ratesSec">
+        <div style="font-size:11px;font-weight:700;color:#6858a0;padding:4px 8px;background:#eae5f5;border-radius:4px;margin-bottom:6px;">4대보험 — 사업주 부담율 (%, 직접 수정 가능)</div>
+        <div style="padding:0 4px;">
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">국민연금</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rNP" value="4.5" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rNP',4.5)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">건강보험</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rHI" value="3.545" step="0.001" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rHI',3.545)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">장기요양</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rLT" value="0.4591" step="0.0001" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rLT',0.4591)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:11px;color:#4a3828;width:80px;">실업급여</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rEI1" value="0.9" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rEI1',0.9)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:10px;color:#4a3828;width:80px;">고용안정·<br>직업능력개발</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rEI2" value="0.25" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rEI2',0.25)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">산재보험</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rAcc" value="0.7" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rAcc',0.7)" class="rstbtn" title="기본값 복원">↺</button></div></div>
+        </div>
+        <div style="border-top:1px solid #ddd0bc;padding-top:8px;margin-top:8px;">
+          <div style="font-size:11px;font-weight:700;color:#9e7040;padding:4px 8px;background:#f5edd8;border-radius:4px;margin-bottom:6px;">퇴직충당금 (%, 직접 수정 가능)</div>
+          <div style="padding:0 4px;">
+            <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">충당 비율</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rRet" value="8.33" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rv('rRet',8.33)" class="rstbtn" title="기본값(8.33%) 복원">↺</button></div></div>
+            <div style="font-size:10px;color:#a09080;margin-top:3px;">기본값 8.33% = 1개월÷12개월 / DC형 연금 시 실납입율로 변경</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 복리후생비 (공통) -->
+    <div class="panel">
+      <div class="sec-hdr">🎁 복리후생비 <span style="font-size:10px;font-weight:400;color:#a09080;">전 업무 공통 · 1인 월 기준 (원)</span></div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_meal" checked onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_meal" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">식대</label><input type="number" id="wf_meal_v" value="200000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_trans" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_trans" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">교통비</label><input type="number" id="wf_trans_v" value="100000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_uni" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_uni" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">피복비</label><input type="number" id="wf_uni_v" value="50000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_bonus" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_bonus" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">명절상여</label><input type="number" id="wf_bonus_v" value="83333" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_health" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_health" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">건강검진</label><input type="number" id="wf_health_v" value="30000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_condo" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_condo" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">경조사비</label><input type="number" id="wf_condo_v" value="20000" oninput="calculate()" class="inp" style="flex:1;"></div>
+      </div>
+    </div>
+
+    <!-- 기타고정비 + 관리비율 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">💼 기타 고정비 <span style="font-size:10px;font-weight:400;color:#a09080;">월 합계 → 전체 인원 배분</span></div>
+        <button onclick="addFixed()" style="font-size:11px;background:#f0e2cc;color:#a07040;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:600;">+ 추가</button>
+      </div>
+      <div id="fixedRows" style="display:flex;flex-direction:column;gap:5px;"></div>
+      <div style="margin-top:8px;">
+        <label style="font-size:11px;color:#7a6a58;">관리비율 (%)</label>
+        <input type="number" id="mgmtRate" value="10" step="0.5" oninput="calculate()" class="inp" style="margin-top:3px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MIDDLE PANEL ===== -->
+  <div style="display:flex;flex-direction:column;gap:10px;">
+
+    <!-- 요약 카드 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">전체 인원</div><div id="s_head" style="font-size:26px;font-weight:800;color:#5a7aaa;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">명</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">월 청구 총액</div><div id="s_monthly" style="font-size:20px;font-weight:800;color:#4d7a5a;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (관리비 포함)</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">연간 추정 금액</div><div id="s_annual" style="font-size:20px;font-weight:800;color:#a07040;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (×12개월)</div></div>
+    </div>
+
+    <!-- 업무별 요약 테이블 -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📋 업무별 청구 요약</div>
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:11px;font-weight:700;color:#7a6a58;padding:6px 8px;background:#f0e8d8;border-radius:6px 6px 0 0;border:1px solid #ddd0bc;border-bottom:none;">
+        <span>업무명</span><span style="text-align:center;">교대형태</span><span style="text-align:center;">인원</span><span style="text-align:right;">시급</span><span style="text-align:right;">1인 청구단가</span><span style="text-align:right;">소계</span>
+      </div>
+      <div id="workResultTbl" style="border:1px solid #ddd0bc;border-top:none;border-radius:0 0 6px 6px;min-height:40px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:12px;font-weight:700;padding:8px;background:#f5ede0;border-radius:6px;margin-top:4px;border:1px solid #c8a878;">
+        <span style="color:#a07040;">전체 합계</span><span></span><span id="r_tot_head" style="text-align:center;color:#a07040;"></span><span></span><span></span><span id="r_grand" style="text-align:right;color:#a07040;font-size:13px;"></span>
+      </div>
+    </div>
+
+    <!-- 업무별 인건비 + 법정부담금 상세 (아코디언) -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📊 업무별 비용 상세</div>
+      <div id="workDetailAccordion"></div>
+    </div>
+
+    <!-- 공통 비용 -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📌 공통 비용 상세 <span style="font-size:12px;font-weight:400;color:#7a6a58;">(전 업무 동일 적용)</span></div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;color:#3d6b4a;background:#dff0e4;padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid #5a8a6a;">복리후생비</div>
+        <div id="wf_det" style="padding:0 8px;"></div>
+        <div class="res-row" style="font-weight:700;color:#3d6b4a;border-bottom:none;padding:5px 8px;"><span>소계 (1인당)</span><span id="r_wf_sub">-</span></div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#9e7040;background:#f5edd8;padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid #c8a060;">기타 고정비 (전체 인원 배분)</div>
+        <div id="fx_det" style="padding:0 8px;"></div>
+        <div class="res-row" style="font-weight:700;color:#9e7040;border-bottom:none;padding:5px 8px;"><span>소계 (1인 배분)</span><span id="r_fx_sub">-</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT PANEL ===== -->
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">비용 구성 비율</div><canvas id="pieChart" style="max-height:220px;"></canvas></div>
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">업무별 월 청구금액</div><canvas id="barChart" style="max-height:200px;"></canvas></div>
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">구성 비율 범례</div><div id="legendTbl" style="display:flex;flex-direction:column;gap:5px;"></div></div>
+  </div>
+
+</div>
+
+<script>
+// ================================================================
+// CONFIG
+// ================================================================
+const SHIFT_DEF = {
+  day:       { regular:209, overtime:0,   night:0,   label:'주간고정' },
+  shift2:    { regular:174, overtime:52,  night:78,  label:'2교대' },
+  shift3:    { regular:174, overtime:0,   night:58,  label:'3교대' },
+  shift43:   { regular:182, overtime:8,   night:40,  label:'4조3교대' },
+  alternate: { regular:209, overtime:120, night:60,  label:'격일제' },
+};
+
+const SHIFT_BASIS = {
+  day: {
+    title: '주간고정 — 월~금 1일 8시간 근무',
+    items: [
+      ['소정근로 (209h)', '주 40h + 주휴 8h = 주 48h', '48 × (365÷7÷12) ≈ 209h/월'],
+      ['연장근로 (0h)',   '해당 없음 — 법정근로시간(주 40h) 이내 운영', '—'],
+      ['야간근로 (0h)',   '해당 없음 — 22:00~06:00 시간대 미해당', '—'],
+    ],
+    note: '근거: 근로기준법 제50조 / 최저임금법 시행령 제5조 (월 통상임금 산정기준 209시간)',
+  },
+  shift2: {
+    title: '2조 2교대 — 주간조(06~18) / 야간조(18~06) 교대',
+    items: [
+      ['소정근로 (174h)', '1일 실근로 12h, 2조 교대 주기 반영 월 환산 (주 40h 기준)', '≈ 174h/월'],
+      ['연장근로 (52h)',  '일 8h 초과분 × 근무일수 — 가산분 0.5만 계상 (시급×h×0.5)', '≈ 52h/월'],
+      ['야간근로 (78h)',  '22:00~06:00 해당 시간 × 근무일수 — 가산분 0.5만 계상', '≈ 78h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  shift3: {
+    title: '3조 3교대 — 1조(06~14) / 2조(14~22) / 3조(22~06) 순환',
+    items: [
+      ['소정근로 (174h)', '1일 8h, 3조 순환 (주 40h 기준) 월 환산', '≈ 174h/월'],
+      ['연장근로 (0h)',   '법정 근로시간 이내 설계 — 교대 설계상 연장 없음', '—'],
+      ['야간근로 (58h)',  '3조(야간): 22:00~06:00 (8h) × 월 야간조 근무일수 — 가산분 0.5만 계상', '≈ 58h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  shift43: {
+    title: '4조 3교대 — A조(08~16) / B조(16~24) / C조(00~08), 1조 휴무 순환',
+    items: [
+      ['소정근로 (182h)', '4조 중 3조 근무: 주 평균 약 42h, 월 환산', '≈ 182h/월'],
+      ['연장근로 (8h)',   '주 40h 초과 약 2h × 월 4.34주 — 가산분 0.5만 계상', '≈ 8h/월'],
+      ['야간근로 (40h)',  'C조: 00:00~08:00 (8h) × 월 야간조 근무일수 — 가산분 0.5만 계상', '≈ 40h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  alternate: {
+    title: '격일제 — 24시간 근무 후 24시간 비번 반복',
+    items: [
+      ['소정근로 (209h)', '월 통상임금 산정기준: 주 48h(40h+주휴8h) × (365÷7÷12)', '≈ 209h/월'],
+      ['연장근로 (120h)', '근무일 실근로 16h 중 8h 초과분 8h × 월 15일 — 가산분 0.5만 계상', '≈ 120h/월'],
+      ['야간근로 (60h)',  '22:00~06:00 중 야간 4h × 월 15일 — 가산분 0.5만 계상', '≈ 60h/월'],
+    ],
+    note: '월 근무일수는 30일 기준 약 15일 (실제 달력·해당 월에 따라 상이) — 직접 수정 가능',
+  },
+};
+
+const WK_COLORS = ['#7a9fcc','#70b898','#d4a060','#d07878','#9880cc','#d87aaa','#5ab8cc','#90c070'];
+
+const WF_ITEMS = [
+  {id:'wf_meal',   lbl:'식대'},
+  {id:'wf_trans',  lbl:'교통비'},
+  {id:'wf_uni',    lbl:'피복비'},
+  {id:'wf_bonus',  lbl:'명절상여'},
+  {id:'wf_health', lbl:'건강검진'},
+  {id:'wf_condo',  lbl:'경조사비'},
+];
+
+let wkCnt = 0, fxCnt = 0;
+let pieChart = null, barChart = null;
+
+// ================================================================
+// UTIL
+// ================================================================
+const $   = id => document.getElementById(id);
+const gv  = id => parseFloat($(id)?.value) || 0;
+const gc  = id => $(id)?.checked || false;
+const fmt  = n => Math.round(n).toLocaleString('ko-KR') + '원';
+const fmtn = n => Math.round(n).toLocaleString('ko-KR');
+
+function rv(id, def) { $(id).value = def; calculate(); }
+
+function toggleSec(secId, btnId) {
+  const s = $(secId), b = $(btnId);
+  if (s.style.display === 'none') { s.style.display='block'; b.textContent='접기'; }
+  else { s.style.display='none'; b.textContent='펼치기'; }
+}
+
+function toggleDetail(id) {
+  const el = $('detail_body_' + id);
+  const btn = $('detail_btn_' + id);
+  if (!el) return;
+  if (el.style.display === 'none') { el.style.display='block'; btn.textContent='▲ 접기'; }
+  else { el.style.display='none'; btn.textContent='▼ 상세 보기'; }
+}
+
+function getShiftBasisHTML(shiftType) {
+  const b = SHIFT_BASIS[shiftType];
+  if (!b) return '';
+  return `<div style="background:#f5ede0;border-radius:5px;padding:8px 10px;margin-top:7px;border:1px solid #d8c8a8;">
+    <div style="font-size:11px;font-weight:700;color:#4a3828;margin-bottom:6px;">📋 ${b.title}</div>
+    <table style="width:100%;font-size:10px;border-collapse:collapse;">
+      <thead><tr style="background:#e8d4bc;">
+        <th style="text-align:left;padding:3px 6px;color:#5a3828;font-weight:700;width:108px;">구분</th>
+        <th style="text-align:left;padding:3px 6px;color:#5a3828;font-weight:700;">산정 기준</th>
+        <th style="text-align:right;padding:3px 6px;color:#5a3828;font-weight:700;width:94px;">적용 기본값</th>
+      </tr></thead>
+      <tbody>${b.items.map((row, i) => `
+        <tr style="${i%2===1?'background:#faf3e8':''}">
+          <td style="padding:3px 6px;color:#5a4838;font-weight:600;">${row[0]}</td>
+          <td style="padding:3px 6px;color:#6a5848;">${row[1]}</td>
+          <td style="padding:3px 6px;text-align:right;color:#9a7040;font-weight:600;">${row[2]}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ${b.note ? `<div style="font-size:10px;color:#9a8070;margin-top:5px;padding-top:4px;border-top:1px dashed #d0b898;">※ ${b.note}</div>` : ''}
+  </div>`;
+}
+
+function toggleShiftBasis(id) {
+  const el = $(`shiftBasis_${id}`);
+  const btn = $(`basisBtn_${id}`);
+  if (!el) return;
+  if (el.style.display === 'none') {
+    el.innerHTML = getShiftBasisHTML($(`wShift_${id}`)?.value || 'day');
+    el.style.display = 'block';
+    btn.textContent = '접기';
+  } else {
+    el.style.display = 'none';
+    btn.textContent = '📋 산정 근거';
+  }
+}
+
+// ================================================================
+// WORK ITEMS
+// ================================================================
+function addWork(p) {
+  const id = ++wkCnt;
+  const col = WK_COLORS[(id - 1) % WK_COLORS.length];
+  p = p || { name:'', shiftType:'day', hourlyRate:10030, headcount:1, accidentRate:1.0, hoursRegular:209, hoursOvertime:0, hoursNight:0, weekendDays:0 };
+
+  const div = document.createElement('div');
+  div.id = `work_${id}`;
+  div.style.cssText = `border-radius:8px;padding:12px;margin-bottom:8px;border:1px solid #ddd0bc;border-left:4px solid ${col};background:#faf5ee;`;
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+      <input type="text" id="wName_${id}" value="${p.name}" placeholder="업무명 입력"
+        oninput="calculate()"
+        style="flex:1;padding:5px 8px;border:1px solid #ddd0bc;border-radius:6px;font-size:13px;font-weight:600;outline:none;background:#fdf9f3;">
+      <select id="wShift_${id}" onchange="onShiftChange(${id})"
+        style="padding:5px 6px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;">
+        <option value="day"       ${p.shiftType==='day'      ?'selected':''}>주간고정</option>
+        <option value="shift2"    ${p.shiftType==='shift2'   ?'selected':''}>2교대</option>
+        <option value="shift3"    ${p.shiftType==='shift3'   ?'selected':''}>3교대</option>
+        <option value="shift43"   ${p.shiftType==='shift43'  ?'selected':''}>4조3교대</option>
+        <option value="alternate" ${p.shiftType==='alternate'?'selected':''}>격일제</option>
+      </select>
+      <button onclick="removeWork(${id})" style="color:#c06060;background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;" title="삭제">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px;">
+      <div>
+        <label style="font-size:10px;color:#7a6a58;">시급 (원)</label>
+        <input type="number" id="wRate_${id}" value="${p.hourlyRate}" oninput="calculate()"
+          style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
+        <div id="wWarn_${id}" style="display:none;font-size:10px;color:#c06060;margin-top:1px;">⚠ 최저임금 미만</div>
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a6a58;">인원수 (명)</label>
+        <input type="number" id="wHead_${id}" value="${p.headcount}" min="1" oninput="calculate()"
+          style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
+      </div>
+    </div>
+    <div style="background:#f0e9dc;border-radius:5px;padding:7px 8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <div style="font-size:10px;color:#7a6050;font-weight:600;">월 근무시간 — 교대형태 선택 시 자동입력, 직접 수정 가능</div>
+        <button type="button" onclick="toggleShiftBasis(${id})" id="basisBtn_${id}" style="font-size:10px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;margin-left:6px;white-space:nowrap;">📋 산정 근거</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;">
+        <div><label style="font-size:10px;color:#7a6a58;">소정 (h)</label><input type="number" id="wReg_${id}" value="${p.hoursRegular}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">연장 (h)</label><input type="number" id="wOT_${id}" value="${p.hoursOvertime}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">야간 (h)</label><input type="number" id="wNt_${id}" value="${p.hoursNight}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">주말 (일)</label><input type="number" id="wWk_${id}" value="${p.weekendDays}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+      </div>
+      <div id="shiftBasis_${id}" style="display:none;"></div>
+    </div>
+  `;
+  $('workList').appendChild(div);
+  calculate();
+}
+
+function removeWork(id) {
+  $(`work_${id}`)?.remove();
+  calculate();
+}
+
+function onShiftChange(id) {
+  const def = SHIFT_DEF[$(`wShift_${id}`)?.value];
+  if (!def) return;
+  $(`wReg_${id}`).value = def.regular;
+  $(`wOT_${id}`).value  = def.overtime;
+  $(`wNt_${id}`).value  = def.night;
+  const basisEl = $(`shiftBasis_${id}`);
+  if (basisEl && basisEl.style.display !== 'none') {
+    basisEl.innerHTML = getShiftBasisHTML($(`wShift_${id}`)?.value);
+  }
+  calculate();
+}
+
+function collectWorks() {
+  const items = [];
+  for (let i = 1; i <= wkCnt; i++) {
+    if (!$(`work_${i}`)) continue;
+    const rate = gv(`wRate_${i}`);
+    const warnEl = $(`wWarn_${i}`);
+    if (warnEl) warnEl.style.display = (rate > 0 && rate < 10030) ? 'block' : 'none';
+    items.push({
+      id: i,
+      name:          $(`wName_${i}`)?.value || `업무 ${i}`,
+      shiftType:     $(`wShift_${i}`)?.value || 'day',
+      hourlyRate:    rate,
+      headcount:     Math.max(1, Math.round(gv(`wHead_${i}`))),
+      accidentRate:  gv('rAcc') / 100,
+      hoursRegular:  gv(`wReg_${i}`),
+      hoursOvertime: gv(`wOT_${i}`),
+      hoursNight:    gv(`wNt_${i}`),
+      weekendDays:   gv(`wWk_${i}`),
+    });
+  }
+  return items;
+}
+
+// ================================================================
+// FIXED / WELFARE COLLECT
+// ================================================================
+function addFixed() {
+  const id = ++fxCnt;
+  const div = document.createElement('div');
+  div.id = `fxRow_${id}`;
+  div.style.cssText = 'display:flex;align-items:center;gap:5px;';
+  div.innerHTML = `
+    <input type="text" placeholder="항목명" id="fxName_${id}" oninput="calculate()"
+      style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
+    <input type="number" placeholder="금액" id="fxAmt_${id}" value="0" oninput="calculate()"
+      style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
+    <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>
+  `;
+  $('fixedRows').appendChild(div);
+  calculate();
+}
+
+function removeFixed(id) { $(`fxRow_${id}`)?.remove(); calculate(); }
+
+function collectFixed() {
+  let total = 0;
+  const details = [];
+  for (let i = 1; i <= fxCnt; i++) {
+    if (!$(`fxRow_${i}`)) continue;
+    const name = $(`fxName_${i}`)?.value || '미입력';
+    const amt  = gv(`fxAmt_${i}`);
+    total += amt;
+    details.push({ name, amt });
+  }
+  return { total, details };
+}
+
+function collectWelfare() {
+  let total = 0;
+  const details = [];
+  for (const w of WF_ITEMS) {
+    if (gc(w.id)) {
+      const amt = gv(w.id + '_v');
+      total += amt;
+      details.push({ lbl: w.lbl, amt });
+    }
+  }
+  return { total, details };
+}
+
+// ================================================================
+// CALCULATION ENGINE
+// ================================================================
+function calcOne(w, rates, wfTotal, fxPerPerson, mgmtRate) {
+  const hHol   = w.weekendDays * 8;
+  const wBase  = w.hourlyRate * w.hoursRegular;
+  const wOT    = w.hourlyRate * w.hoursOvertime * 0.5;
+  const wNt    = w.hourlyRate * w.hoursNight    * 0.5;
+  const wHol   = w.hourlyRate * hHol            * 0.5;
+  const wSub   = wBase + wOT + wNt + wHol;
+
+  const vRet   = wSub * rates.ret;
+  const vPen   = wSub * rates.pen;
+  const vHlt   = wSub * rates.hlt;
+  const vLtc   = wSub * rates.ltc;
+  const vEmp1  = wSub * rates.emp1;
+  const vEmp2  = wSub * rates.emp2;
+  const vEmp   = vEmp1 + vEmp2;
+  const vAcc   = wSub * w.accidentRate;
+  const lSub   = vRet + vPen + vHlt + vLtc + vEmp + vAcc;
+
+  const netPer = wSub + lSub + wfTotal + fxPerPerson;
+  const mgmt   = netPer * mgmtRate;
+  const finPer = netPer + mgmt;
+  const sub    = finPer * w.headcount;
+  const hBill  = w.hoursRegular > 0 ? finPer / w.hoursRegular : 0;
+
+  return { ...w, hHol, wBase, wOT, wNt, wHol, wSub, vRet, vPen, vHlt, vLtc, vEmp1, vEmp2, vEmp, vAcc, lSub, wfTotal, fxPerPerson, netPer, mgmt, finPer, sub, hBill };
+}
+
+function calculate() {
+  const works   = collectWorks();
+  const welfare = collectWelfare();
+  const fixed   = collectFixed();
+  const mgmtR   = gv('mgmtRate') / 100;
+  const rates   = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
+
+  const totHead = works.reduce((s, w) => s + w.headcount, 0);
+  const fxPer   = totHead > 0 ? fixed.total / totHead : 0;
+
+  $('minWageAlert').style.display = works.some(w => w.hourlyRate > 0 && w.hourlyRate < 10030) ? 'block' : 'none';
+
+  const results  = works.map(w => calcOne(w, rates, welfare.total, fxPer, mgmtR));
+  const grandTot = results.reduce((s, r) => s + r.sub, 0);
+
+  // aggregated (for donut chart)
+  const agg = results.reduce((a, r) => ({
+    wBase: a.wBase + r.wBase * r.headcount,
+    wAlw:  a.wAlw  + (r.wOT + r.wNt + r.wHol) * r.headcount,
+    vRet:  a.vRet  + r.vRet  * r.headcount,
+    ins:   a.ins   + (r.vPen + r.vHlt + r.vLtc + r.vEmp + r.vAcc) * r.headcount,
+    wf:    a.wf    + r.wfTotal * r.headcount,
+    fx:    a.fx    + r.fxPerPerson * r.headcount,
+    mgmt:  a.mgmt  + r.mgmt  * r.headcount,
+  }), { wBase:0, wAlw:0, vRet:0, ins:0, wf:0, fx:0, mgmt:0 });
+
+  // Summary cards
+  $('s_head').textContent    = totHead || '-';
+  $('s_monthly').textContent = grandTot > 0 ? fmtn(grandTot) : '-';
+  $('s_annual').textContent  = grandTot > 0 ? fmtn(grandTot * 12) : '-';
+
+  // Work table
+  renderWorkTable(results, totHead, grandTot);
+
+  // Per-work accordion detail
+  renderAccordion(results, rates);
+
+  // Common detail
+  renderCommon(welfare, fixed, fxPer, totHead);
+
+  // Charts
+  renderCharts(agg, results);
+}
+
+// ================================================================
+// RENDER: WORK TABLE
+// ================================================================
+function renderWorkTable(results, totHead, grandTot) {
+  const tbody = $('workResultTbl');
+  if (!results.length) {
+    tbody.innerHTML = '<div style="padding:16px;text-align:center;color:#a09080;font-size:13px;">업무를 추가해주세요</div>';
+    $('r_tot_head').textContent = '-';
+    $('r_grand').textContent = '-';
+    return;
+  }
+  tbody.innerHTML = results.map((r, i) => {
+    const col = WK_COLORS[(r.id - 1) % WK_COLORS.length];
+    return `
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:12px;padding:8px;border-bottom:1px solid #ede0cc;align-items:center;${i%2?'background:#faf5ee':''}">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+          <span style="font-weight:600;">${r.name}</span>
+        </div>
+        <span style="text-align:center;color:#7a6a58;">${SHIFT_DEF[r.shiftType]?.label||r.shiftType}</span>
+        <span style="text-align:center;">${r.headcount}명</span>
+        <span style="text-align:right;">${fmtn(r.hourlyRate)}</span>
+        <span style="text-align:right;font-weight:600;color:#a07040;">${fmt(r.finPer)}</span>
+        <span style="text-align:right;font-weight:700;color:#4d7a5a;">${fmt(r.sub)}</span>
+      </div>`;
+  }).join('');
+  $('r_tot_head').textContent = `${totHead}명`;
+  $('r_grand').textContent = fmt(grandTot);
+}
+
+// ================================================================
+// RENDER: ACCORDION DETAIL
+// ================================================================
+function renderAccordion(results, rates) {
+  if (!results.length) { $('workDetailAccordion').innerHTML = '<div style="color:#a09080;font-size:13px;padding:8px 0;">업무를 추가하면 상세 내역이 표시됩니다.</div>'; return; }
+  $('workDetailAccordion').innerHTML = results.map(r => {
+    const col = WK_COLORS[(r.id - 1) % WK_COLORS.length];
+    return `
+      <div style="border:1px solid #ddd0bc;border-radius:8px;margin-bottom:8px;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#f5ede0;border-bottom:1px solid #ddd0bc;cursor:pointer;" onclick="toggleDetail(${r.id})">
+          <div style="display:flex;align-items:center;gap:7px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:${col};"></div>
+            <span style="font-size:13px;font-weight:700;">${r.name}</span>
+            <span style="font-size:11px;color:#7a6a58;">${r.headcount}명 · ${SHIFT_DEF[r.shiftType]?.label||''} · 시급 ${fmtn(r.hourlyRate)}원</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;font-weight:700;color:#a07040;">1인 ${fmt(r.finPer)}</span>
+            <button id="detail_btn_${r.id}" style="font-size:11px;color:#9b7050;background:none;border:none;cursor:pointer;">▼ 상세 보기</button>
+          </div>
+        </div>
+        <div id="detail_body_${r.id}" style="display:none;padding:10px 12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#4a6a9a;background:#e0eaf5;padding:4px 8px;border-radius:4px;margin-bottom:5px;">① 인건비</div>
+              <div class="res-row"><span style="color:#4a3828;">기본급 <span style="font-size:10px;color:#a09080;">(${r.hoursRegular}h)</span></span><span style="font-weight:600;">${fmt(r.wBase)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">연장수당 <span style="font-size:10px;color:#a09080;">(${r.hoursOvertime}h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wOT)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">야간수당 <span style="font-size:10px;color:#a09080;">(${r.hoursNight}h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wNt)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">휴일수당 <span style="font-size:10px;color:#a09080;">(${r.weekendDays}일×8h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wHol)}</span></div>
+              <div class="res-row" style="font-weight:700;color:#4a6a9a;border-bottom:none;"><span>소계</span><span>${fmt(r.wSub)}</span></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#6858a0;background:#eae5f5;padding:4px 8px;border-radius:4px;margin-bottom:5px;">② 법정부담금</div>
+              <div class="res-row"><span style="color:#4a3828;">퇴직충당금 <span style="font-size:10px;color:#a09080;">(${gv('rRet')}%)</span></span><span style="font-weight:600;">${fmt(r.vRet)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">국민연금 <span style="font-size:10px;color:#a09080;">(${gv('rNP')}%)</span></span><span style="font-weight:600;">${fmt(r.vPen)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">건강보험 <span style="font-size:10px;color:#a09080;">(${gv('rHI')}%)</span></span><span style="font-weight:600;">${fmt(r.vHlt)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">장기요양 <span style="font-size:10px;color:#a09080;">(${gv('rLT')}%)</span></span><span style="font-weight:600;">${fmt(r.vLtc)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">실업급여 <span style="font-size:10px;color:#a09080;">(${gv('rEI1')}%)</span></span><span style="font-weight:600;">${fmt(r.vEmp1)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">고용안정·직업능력개발 <span style="font-size:10px;color:#a09080;">(${gv('rEI2')}%)</span></span><span style="font-weight:600;">${fmt(r.vEmp2)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">산재보험 <span style="font-size:10px;color:#a09080;">(${(r.accidentRate*100).toFixed(2)}%)</span></span><span style="font-weight:600;">${fmt(r.vAcc)}</span></div>
+              <div class="res-row" style="font-weight:700;color:#6858a0;border-bottom:none;"><span>소계</span><span>${fmt(r.lSub)}</span></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid #ddd0bc;margin-top:8px;padding-top:8px;">
+            <div class="res-row"><span style="color:#4a3828;">복리후생비 (공통)</span><span style="font-weight:600;">${fmt(r.wfTotal)}</span></div>
+            <div class="res-row"><span style="color:#4a3828;">기타고정비 (1인 배분)</span><span style="font-weight:600;">${fmt(r.fxPerPerson)}</span></div>
+            <div class="res-row"><span style="font-weight:700;">1인 월 순비용</span><span style="font-weight:700;">${fmt(r.netPer)}</span></div>
+            <div class="res-row"><span style="color:#4a3828;">관리비 (${gv('mgmtRate')}%)</span><span style="font-weight:600;">${fmt(r.mgmt)}</span></div>
+            <div style="display:flex;justify-content:space-between;background:#a07040;color:white;padding:8px 10px;border-radius:6px;margin-top:6px;">
+              <span style="font-weight:700;">1인 최종 청구금액</span><span style="font-weight:800;font-size:15px;">${fmt(r.finPer)}</span>
+            </div>
+            <div class="res-row" style="margin-top:4px;border-bottom:none;">
+              <span style="color:#4a3828;">시간당 청구 단가 (÷${r.hoursRegular}h)</span>
+              <span style="font-weight:700;color:#4d7a5a;">${fmt(r.hBill)}/h</span>
+            </div>
+            <div class="res-row" style="font-weight:700;border-bottom:none;">
+              <span>${r.headcount}명 소계</span>
+              <span style="color:#4d7a5a;font-size:15px;">${fmt(r.sub)}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ================================================================
+// RENDER: COMMON DETAIL
+// ================================================================
+function renderCommon(welfare, fixed, fxPer, totHead) {
+  $('wf_det').innerHTML = welfare.details.length
+    ? welfare.details.map(w => `<div class="res-row"><span style="color:#4a3828;">${w.lbl}</span><span style="font-weight:600;">${fmt(w.amt)}</span></div>`).join('')
+    : '<div style="font-size:12px;color:#a09080;padding:4px 8px;">선택된 항목 없음</div>';
+  $('r_wf_sub').textContent = fmt(welfare.total);
+
+  $('fx_det').innerHTML = fixed.details.length
+    ? fixed.details.map(f => `<div class="res-row"><span style="color:#4a3828;">${f.name} <span style="font-size:11px;color:#a09080;">(합계 ${fmtn(f.amt)}원 ÷ ${totHead}명)</span></span><span style="font-weight:600;">${fmt(fxPer)}</span></div>`).join('')
+    : '<div style="font-size:12px;color:#a09080;padding:4px 8px;">입력된 항목 없음</div>';
+  $('r_fx_sub').textContent = fmt(fxPer);
+}
+
+// ================================================================
+// CHARTS
+// ================================================================
+function renderCharts(agg, results) {
+  const pLbls = ['기본급','법정수당(가산)','퇴직충당금','4대보험','복리후생비','기타고정비','관리비'];
+  const pVals = [agg.wBase, agg.wAlw, agg.vRet, agg.ins, agg.wf, agg.fx, agg.mgmt].map(Math.round);
+  const pCols = ['#7a9fcc','#b0c8e0','#a090c0','#c4b0e0','#6aaa8a','#c8a870','#b8a898'];
+
+  if (pieChart) { pieChart.data.datasets[0].data = pVals; pieChart.update(); }
+  else {
+    pieChart = new Chart($('pieChart').getContext('2d'), {
+      type: 'doughnut',
+      data: { labels: pLbls, datasets: [{ data: pVals, backgroundColor: pCols, borderWidth:2, borderColor:'#fff' }] },
+      options: { responsive:true, cutout:'58%',
+        plugins: { legend:{ display:false },
+          tooltip:{ callbacks:{ label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${fmtn(ctx.raw)}원 (${t>0?(ctx.raw/t*100).toFixed(1):0}%)`; } } }
+        }
+      }
+    });
+  }
+
+  const tot = pVals.reduce((a,b)=>a+b,0);
+  $('legendTbl').innerHTML = pLbls.map((l,i) => {
+    const p = tot > 0 ? (pVals[i]/tot*100).toFixed(1) : 0;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;"><div style="width:10px;height:10px;border-radius:50%;background:${pCols[i]};flex-shrink:0;"></div><span style="flex:1;color:#4a3828;">${l}</span><span style="color:#7a6a58;width:30px;text-align:right;">${p}%</span><span style="font-weight:600;width:65px;text-align:right;">${fmtn(pVals[i])}</span></div>`;
+  }).join('');
+
+  const bLbls = results.map(r => r.name || `업무${r.id}`);
+  const bVals = results.map(r => Math.round(r.sub));
+  const bCols = results.map(r => WK_COLORS[(r.id-1) % WK_COLORS.length]);
+
+  if (barChart) { barChart.data.labels=bLbls; barChart.data.datasets[0].data=bVals; barChart.data.datasets[0].backgroundColor=bCols; barChart.update(); }
+  else {
+    barChart = new Chart($('barChart').getContext('2d'), {
+      type: 'bar',
+      data: { labels: bLbls, datasets: [{ label:'월 청구금액', data: bVals, backgroundColor: bCols, borderRadius:5 }] },
+      options: { responsive:true, plugins:{ legend:{ display:false } },
+        scales: { y:{ ticks:{ callback: v => fmtn(v/10000)+'만', font:{size:10} } }, x:{ ticks:{ font:{size:11} } } }
+      }
+    });
+  }
+}
+
+// ================================================================
+// RESET / COPY
+// ================================================================
+function resetAll() {
+  if (!confirm('모든 입력값을 초기화하시겠습니까?')) return;
+  $('workList').innerHTML = '';
+  $('fixedRows').innerHTML = '';
+  wkCnt = 0; fxCnt = 0;
+  $('rNP').value=4.5; $('rHI').value=3.545; $('rLT').value=0.4591; $('rEI1').value=0.9; $('rEI2').value=0.25; $('rAcc').value=0.7;
+  $('rRet').value=8.33; $('mgmtRate').value=10;
+  for (const w of WF_ITEMS) { if ($(w.id)) $(w.id).checked=(w.id==='wf_meal'); }
+  $('wf_meal_v').value=200000; $('wf_trans_v').value=100000;
+  $('wf_uni_v').value=50000; $('wf_bonus_v').value=83333;
+  $('wf_health_v').value=30000; $('wf_condo_v').value=20000;
+  addWork({ name:'경비', shiftType:'alternate', hourlyRate:10030, headcount:3, accidentRate:0.7, hoursRegular:209, hoursOvertime:120, hoursNight:60, weekendDays:0 });
+}
+
+function copyResult() {
+  const works = collectWorks();
+  const welfare = collectWelfare();
+  const fixed = collectFixed();
+  const mgmtR = gv('mgmtRate') / 100;
+  const rates = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
+  const totHead = works.reduce((s,w)=>s+w.headcount,0);
+  const fxPer = totHead > 0 ? fixed.total / totHead : 0;
+  const results = works.map(w => calcOne(w, rates, welfare.total, fxPer, mgmtR));
+  const grandTot = results.reduce((s,r)=>s+r.sub,0);
+
+  const lines = [
+    '=== 협력업체 요율산정 결과 ===',
+    `산정일: ${new Date().toLocaleDateString('ko-KR')}`,
+    '',
+    '[적용 비율]',
+    `퇴직충당금 ${gv('rRet')}% | 국민연금 ${gv('rNP')}% | 건강보험 ${gv('rHI')}% | 장기요양 ${gv('rLT')}% | 실업급여 ${gv('rEI1')}% | 고용안정·직업능력개발 ${gv('rEI2')}% | 산재보험 ${gv('rAcc')}% | 관리비율 ${gv('mgmtRate')}%`,
+    '',
+    '[업무별 결과]',
+    ...results.map(r => `${r.name} | ${SHIFT_DEF[r.shiftType]?.label||''} | ${r.headcount}명 | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
+    '',
+    `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
+  ];
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => alert('결과가 클립보드에 복사되었습니다.'))
+    .catch(() => alert('복사 실패. 브라우저 권한을 확인해주세요.'));
+}
+
+// ================================================================
+// EXCEL EXPORT
+// ================================================================
+function exportExcel() {
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+
+  const works   = collectWorks();
+  const welfare = collectWelfare();
+  const fixed   = collectFixed();
+  const mgmtR   = gv('mgmtRate') / 100;
+  const rates   = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
+  const totHead = works.reduce((s,w) => s + w.headcount, 0);
+  const fxPer   = totHead > 0 ? fixed.total / totHead : 0;
+  const results = works.map(w => calcOne(w, rates, welfare.total, fxPer, mgmtR));
+  const grandTot = results.reduce((s,r) => s + r.sub, 0);
+  const R = v => Math.round(v);
+
+  // ── 스타일 팔레트 ────────────────────────────────────────
+  const bt = { style:'thin',   color:{ rgb:'B0CCD8' } };
+  const bm = { style:'medium', color:{ rgb:'7A9AB8' } };
+  const bb = { style:'medium', color:{ rgb:'4A7A9B' } };
+  const thin = { top:bt, bottom:bt, left:bt, right:bt };
+  const med  = { top:bm, bottom:bm, left:bm, right:bm };
+  const blue = { top:bb, bottom:bb, left:bb, right:bb };
+
+  const font = (sz, bold, rgb) => ({ sz, bold: !!bold, color: rgb ? { rgb } : undefined });
+  const fill = rgb => ({ patternType:'solid', fgColor:{ rgb } });
+  const al   = (h, wrap) => ({ horizontal:h, vertical:'center', wrapText:!!wrap });
+
+  const S = {
+    // 제목
+    title:    { font:font(15,1,'FFFFFF'), fill:fill('5A85A8'), alignment:al('center'), border:med },
+    // 산정일
+    infoLbl:  { font:font(10,1,'2D3A44'), fill:fill('EAF2F8'), alignment:al('left'),   border:thin },
+    infoVal:  { font:font(10,0,'2A5C88'), fill:fill('EAF2F8'), alignment:al('left'),   border:thin },
+    // 섹션 헤더 (각 색상별)
+    secBlue:  { font:font(11,1,'FFFFFF'), fill:fill('5A85A8'), alignment:al('left'),   border:med  },
+    secGreen: { font:font(11,1,'FFFFFF'), fill:fill('4A8A6A'), alignment:al('left'),   border:med  },
+    secAmber: { font:font(11,1,'FFFFFF'), fill:fill('5A8090'), alignment:al('left'),   border:med  },
+    secVio:   { font:font(11,1,'FFFFFF'), fill:fill('4A7090'), alignment:al('left'),   border:med  },
+    // 컬럼 헤더
+    colHdr:   { font:font(9, 1,'FFFFFF'), fill:fill('6A9AB8'), alignment:al('center',1), border:thin },
+    colHdrSm: { font:font(9, 1,'FFFFFF'), fill:fill('6A9AB8'), alignment:al('center'), border:thin },
+    // 데이터 행 (짝수/홀수)
+    dataTxt0: { font:font(10,0,'2D3A44'), fill:fill('FFFFFF'), alignment:al('left'),   border:thin },
+    dataTxt1: { font:font(10,0,'2D3A44'), fill:fill('EAF5EC'), alignment:al('left'),   border:thin },
+    dataNum0: { font:font(10,0,'2D3A44'), fill:fill('FFFFFF'), alignment:al('right'),  border:thin },
+    dataNum1: { font:font(10,0,'2D3A44'), fill:fill('EAF5EC'), alignment:al('right'),  border:thin },
+    // 소계 컬럼 (급여합계, 법정부담금계, 소계 등 강조)
+    subNum0:  { font:font(10,1,'2A5C88'), fill:fill('D8EAF5'), alignment:al('right'),  border:thin },
+    subNum1:  { font:font(10,1,'2A5C88'), fill:fill('C8DFF0'), alignment:al('right'),  border:thin },
+    // 전체 합계 행
+    totTxt:   { font:font(10,1,'2A5C88'), fill:fill('C8DFF0'), alignment:al('left'),   border:blue },
+    totNum:   { font:font(10,1,'2A5C88'), fill:fill('C8DFF0'), alignment:al('right'),  border:blue },
+    totEmpty: { font:font(10,0,'7890A0'), fill:fill('C8DFF0'), alignment:al('center'), border:blue },
+    // 전체 요약 (최하단)
+    sumLbl:   { font:font(11,1,'2D3A44'), fill:fill('D8F0E8'), alignment:al('left'),   border:thin },
+    sumVal:   { font:font(12,1,'2A5C88'), fill:fill('D8F0E8'), alignment:al('right'),  border:thin },
+    grandLbl: { font:font(13,1,'FFFFFF'), fill:fill('5A85A8'), alignment:al('left'),   border:med  },
+    grandVal: { font:font(13,1,'FFFFFF'), fill:fill('5A85A8'), alignment:al('right'),  border:med  },
+  };
+
+  const WON  = '#,##0';
+  const PCT  = '0.00';
+  const NUM  = '#,##0';
+
+  // ── AOA + 스타일 메타 추적 ───────────────────────────────
+  const aoa  = [];
+  const meta = []; // { row, col, s, z }
+  const merges = [];
+  let r = 0;
+  const NC = 29; // 업무 테이블 열 수
+
+  function st(row, col, s, z)     { meta.push({ row, col, s, z }); }
+  function stRange(row, c1, c2, s, z) { for (let c = c1; c <= c2; c++) st(row, c, s, z); }
+  function mg(r1,c1,r2,c2)        { merges.push({ s:{r:r1,c:c1}, e:{r:r2,c:c2} }); }
+
+  // ── 제목 ────────────────────────────────────────────────
+  aoa.push(['협력업체 요율산정 결과']);
+  mg(r,0,r,NC-1); stRange(r,0,NC-1, S.title);
+  r++;
+
+  // ── 산정일 ──────────────────────────────────────────────
+  aoa.push(['산정일', new Date().toLocaleDateString('ko-KR')]);
+  st(r,0, S.infoLbl); st(r,1, S.infoVal);
+  r++;
+
+  aoa.push([]); r++; // spacer
+
+  // ── 적용 비율 섹션 ──────────────────────────────────────
+  aoa.push(['적용 비율']);
+  mg(r,0,r,1); stRange(r,0,1, S.secBlue);
+  r++;
+
+  aoa.push(['항목', '비율 (%)']);
+  st(r,0, S.colHdrSm); st(r,1, S.colHdrSm);
+  r++;
+
+  [
+    ['퇴직충당금', gv('rRet')], ['국민연금', gv('rNP')],
+    ['건강보험',   gv('rHI')], ['장기요양보험', gv('rLT')],
+    ['실업급여',   gv('rEI1')], ['고용안정·직업능력개발', gv('rEI2')], ['산재보험', gv('rAcc')],
+    ['관리비율', gv('mgmtRate')],
+  ].forEach(([lbl, val], i) => {
+    aoa.push([lbl, val]);
+    st(r,0, i%2?S.dataTxt1:S.dataTxt0);
+    st(r,1, i%2?S.dataNum1:S.dataNum0, PCT);
+    r++;
+  });
+
+  aoa.push([]); r++;
+
+  // ── 업무별 상세 섹션 ────────────────────────────────────
+  aoa.push(['업무별 상세 내역']);
+  mg(r,0,r,NC-1); stRange(r,0,NC-1, S.secBlue);
+  r++;
+
+  // 컬럼 헤더 (그룹 구분을 위해 색 다르게 할 수도 있으나 통일)
+  aoa.push([
+    '업무명','교대형태',
+    '시급(원)','인원(명)','소정(h)','연장(h)','야간(h)','주말(일)','산재(%)',
+    '기본급','연장수당','야간수당','휴일수당','급여합계',
+    '퇴직충당금','국민연금','건강보험','장기요양','실업급여','고용안정·직업능력개발','산재보험','법정부담금계',
+    '복리후생비(1인)','기타고정비(1인)',
+    '1인 순비용','관리비(1인)','1인 청구단가','시간당단가(원/h)',
+    '인원(명)','소계(원)',
+  ]);
+  stRange(r, 0, NC-1, S.colHdr);
+  const detailHdrRow = r;
+  r++;
+
+  // 데이터 행
+  for (let i = 0; i < results.length; i++) {
+    const res = results[i];
+    const odd = i % 2;
+    aoa.push([
+      res.name, SHIFT_DEF[res.shiftType]?.label || res.shiftType,
+      res.hourlyRate, res.headcount,
+      res.hoursRegular, res.hoursOvertime, res.hoursNight, res.weekendDays,
+      +(res.accidentRate*100).toFixed(2),
+      R(res.wBase), R(res.wOT), R(res.wNt), R(res.wHol), R(res.wSub),
+      R(res.vRet), R(res.vPen), R(res.vHlt), R(res.vLtc), R(res.vEmp1), R(res.vEmp2), R(res.vAcc), R(res.lSub),
+      R(res.wfTotal), R(res.fxPerPerson),
+      R(res.netPer), R(res.mgmt), R(res.finPer), R(res.hBill),
+      res.headcount, R(res.sub),
+    ]);
+    // 텍스트 열
+    st(r,0, odd?S.dataTxt1:S.dataTxt0);
+    st(r,1, odd?S.dataTxt1:S.dataTxt0);
+    // 숫자 열 (c2~c8: 시급/시간/산재 — 일반 숫자)
+    for (let c = 2; c <= 8; c++) st(r,c, odd?S.dataNum1:S.dataNum0, NUM);
+    // c9~c12: 개별 수당 (일반)
+    for (let c = 9; c <= 12; c++) st(r,c, odd?S.dataNum1:S.dataNum0, WON);
+    // c13: 급여합계 (강조)
+    st(r,13, odd?S.subNum1:S.subNum0, WON);
+    // c14~c19: 4대보험
+    for (let c = 14; c <= 19; c++) st(r,c, odd?S.dataNum1:S.dataNum0, WON);
+    // c20: 법정부담금계 (강조)
+    st(r,20, odd?S.subNum1:S.subNum0, WON);
+    // c21~c24: 복리/고정/순비용/관리비
+    for (let c = 21; c <= 24; c++) st(r,c, odd?S.dataNum1:S.dataNum0, WON);
+    // c25: 1인 청구단가 (강조)
+    st(r,25, odd?S.subNum1:S.subNum0, WON);
+    // c26: 시간당단가
+    st(r,26, odd?S.dataNum1:S.dataNum0, WON);
+    // c27: 인원
+    st(r,27, odd?S.dataNum1:S.dataNum0, NUM);
+    // c28: 소계 (강조)
+    st(r,28, odd?S.subNum1:S.subNum0, WON);
+    r++;
+  }
+
+  // 전체 합계 행
+  const sumWage  = results.reduce((s,res) => s + res.wSub * res.headcount, 0);
+  const sumLegal = results.reduce((s,res) => s + res.lSub * res.headcount, 0);
+  const sumWf    = results.reduce((s,res) => s + res.wfTotal * res.headcount, 0);
+  const sumFx    = results.reduce((s,res) => s + res.fxPerPerson * res.headcount, 0);
+  const sumMgmt  = results.reduce((s,res) => s + res.mgmt * res.headcount, 0);
+
+  const totRow = new Array(NC).fill('');
+  totRow[0]  = '전체 합계'; totRow[3]  = totHead;
+  totRow[13] = R(sumWage);  totRow[20] = R(sumLegal);
+  totRow[21] = R(sumWf);    totRow[22] = R(sumFx);
+  totRow[24] = R(sumMgmt);  totRow[27] = totHead;
+  totRow[28] = R(grandTot);
+  aoa.push(totRow);
+
+  stRange(r, 0, NC-1, S.totEmpty);
+  st(r,0,  S.totTxt);
+  st(r,3,  S.totNum, NUM);
+  st(r,13, S.totNum, WON);
+  st(r,20, S.totNum, WON);
+  st(r,21, S.totNum, WON);
+  st(r,22, S.totNum, WON);
+  st(r,24, S.totNum, WON);
+  st(r,27, S.totNum, NUM);
+  st(r,28, S.totNum, WON);
+  r++;
+
+  aoa.push([]); r++;
+
+  // ── 복리후생비 상세 ─────────────────────────────────────
+  aoa.push(['복리후생비 상세']);
+  mg(r,0,r,1); stRange(r,0,1, S.secGreen);
+  r++;
+
+  aoa.push(['항목', '1인 월 금액(원)']);
+  st(r,0, S.colHdrSm); st(r,1, S.colHdrSm);
+  r++;
+
+  welfare.details.forEach((w,i) => {
+    aoa.push([w.lbl, w.amt]);
+    st(r,0, i%2?S.dataTxt1:S.dataTxt0);
+    st(r,1, i%2?S.dataNum1:S.dataNum0, WON);
+    r++;
+  });
+  if (!welfare.details.length) { aoa.push(['(선택 항목 없음)', '']); st(r,0,S.dataTxt0); st(r,1,S.dataNum0); r++; }
+
+  aoa.push(['합계', welfare.total]);
+  st(r,0, S.totTxt); st(r,1, S.totNum, WON);
+  r++;
+
+  aoa.push([]); r++;
+
+  // ── 기타 고정비 상세 ────────────────────────────────────
+  aoa.push(['기타 고정비 상세']);
+  mg(r,0,r,3); stRange(r,0,3, S.secAmber);
+  r++;
+
+  aoa.push(['항목', '월 합계(원)', '1인 배분(원)', '전체 인원(명)']);
+  stRange(r,0,3, S.colHdrSm);
+  r++;
+
+  fixed.details.forEach((f,i) => {
+    aoa.push([f.name, f.amt, R(fxPer), totHead]);
+    st(r,0, i%2?S.dataTxt1:S.dataTxt0);
+    st(r,1, i%2?S.dataNum1:S.dataNum0, WON);
+    st(r,2, i%2?S.dataNum1:S.dataNum0, WON);
+    st(r,3, i%2?S.dataNum1:S.dataNum0, NUM);
+    r++;
+  });
+  if (!fixed.details.length) { aoa.push(['(입력 항목 없음)', '', '', '']); stRange(r,0,3,S.dataTxt0); r++; }
+
+  if (fixed.details.length) {
+    aoa.push(['합계', fixed.total, R(fxPer), totHead]);
+    st(r,0,S.totTxt); st(r,1,S.totNum,WON); st(r,2,S.totNum,WON); st(r,3,S.totNum,NUM);
+    r++;
+  }
+
+  aoa.push([]); r++;
+
+  // ── 전체 요약 ───────────────────────────────────────────
+  aoa.push(['전체 요약']);
+  mg(r,0,r,1); stRange(r,0,1, S.secVio);
+  r++;
+
+  [
+    ['전체 인원(명)',   totHead,            NUM,  false],
+    ['월 청구 총액(원)', R(grandTot),       WON,  true ],
+    ['연간 추정 금액(원)', R(grandTot*12),  WON,  true ],
+  ].forEach(([lbl, val, fmt, grand]) => {
+    aoa.push([lbl, val]);
+    if (grand) { st(r,0,S.grandLbl); st(r,1,S.grandVal,fmt); }
+    else       { st(r,0,S.sumLbl);   st(r,1,S.sumVal,fmt);   }
+    r++;
+  });
+
+  // ── 시트 생성 & 스타일 적용 ────────────────────────────
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  for (const m of meta) {
+    const ref = XLSX.utils.encode_cell({ r:m.row, c:m.col });
+    if (!ws[ref]) ws[ref] = { t:'z', v:'' };
+    ws[ref].s = m.s;
+    if (m.z) ws[ref].z = m.z;
+  }
+
+  ws['!merges'] = merges;
+
+  // 행 높이
+  const rowH = new Array(r).fill({ hpt:18 });
+  rowH[0] = { hpt:32 };                   // 제목
+  rowH[detailHdrRow] = { hpt:38 };         // 컬럼 헤더 (줄바꿈 대비)
+  ws['!rows'] = rowH;
+
+  // 열 너비
+  ws['!cols'] = [
+    {wch:14},{wch:9},
+    {wch:9},{wch:7},{wch:7},{wch:7},{wch:7},{wch:7},{wch:7},
+    {wch:12},{wch:10},{wch:10},{wch:10},{wch:13},
+    {wch:10},{wch:10},{wch:10},{wch:9},{wch:10},{wch:10},{wch:13},
+    {wch:12},{wch:12},
+    {wch:12},{wch:12},{wch:13},{wch:13},
+    {wch:7},{wch:14},
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '요율산정');
+
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `요율산정_${today}.xlsx`);
+}
+
+// ================================================================
+// SAVE / LOAD  (localStorage 기반)
+// ================================================================
+const SL_KEY = 'rateCalc_v1_saves';
+
+function getSaves() {
+  try { return JSON.parse(localStorage.getItem(SL_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function setSaves(arr) { localStorage.setItem(SL_KEY, JSON.stringify(arr)); }
+
+function collectState() {
+  const works = [];
+  for (let i = 1; i <= wkCnt; i++) {
+    if (!$(`work_${i}`)) continue;
+    works.push({
+      name:          $(`wName_${i}`)?.value || '',
+      shiftType:     $(`wShift_${i}`)?.value || 'day',
+      hourlyRate:    gv(`wRate_${i}`),
+      headcount:     gv(`wHead_${i}`),
+      hoursRegular:  gv(`wReg_${i}`),
+      hoursOvertime: gv(`wOT_${i}`),
+      hoursNight:    gv(`wNt_${i}`),
+      weekendDays:   gv(`wWk_${i}`),
+    });
+  }
+  const fixed = [];
+  for (let i = 1; i <= fxCnt; i++) {
+    if (!$(`fxRow_${i}`)) continue;
+    fixed.push({ name: $(`fxName_${i}`)?.value || '', amt: gv(`fxAmt_${i}`) });
+  }
+  const welfare = {};
+  for (const w of WF_ITEMS) {
+    welfare[w.id] = { checked: gc(w.id), value: gv(w.id + '_v') };
+  }
+  return {
+    rates: { rNP: gv('rNP'), rHI: gv('rHI'), rLT: gv('rLT'), rEI1: gv('rEI1'), rEI2: gv('rEI2'), rAcc: gv('rAcc'), rRet: gv('rRet'), mgmtRate: gv('mgmtRate') },
+    welfare, fixed, works,
+  };
+}
+
+function applyState(state) {
+  $('workList').innerHTML = '';
+  $('fixedRows').innerHTML = '';
+  wkCnt = 0; fxCnt = 0;
+
+  if (state.rates) {
+    ['rNP','rHI','rLT','rEI1','rEI2','rAcc','rRet','mgmtRate'].forEach(k => { if (state.rates[k] !== undefined && $(k)) $(k).value = state.rates[k]; });
+  }
+  if (state.welfare) {
+    for (const w of WF_ITEMS) {
+      const sv = state.welfare[w.id];
+      if (!sv) continue;
+      if ($(w.id)) $(w.id).checked = sv.checked;
+      if ($(w.id + '_v')) $(w.id + '_v').value = sv.value;
+    }
+  }
+  if (state.fixed) {
+    for (const f of state.fixed) {
+      const id = ++fxCnt;
+      const div = document.createElement('div');
+      div.id = `fxRow_${id}`;
+      div.style.cssText = 'display:flex;align-items:center;gap:5px;';
+      div.innerHTML = `
+        <input type="text" placeholder="항목명" id="fxName_${id}" value="${f.name.replace(/"/g,'&quot;')}" oninput="calculate()"
+          style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
+        <input type="number" placeholder="금액" id="fxAmt_${id}" value="${f.amt}" oninput="calculate()"
+          style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
+        <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>`;
+      $('fixedRows').appendChild(div);
+    }
+  }
+  if (state.works) {
+    for (const w of state.works) addWork(w);
+  }
+  calculate();
+}
+
+function openSlModal() {
+  const modal = $('slModal');
+  modal.style.display = 'flex';
+  const d = new Date();
+  $('slSaveName').value = `요율산정_${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  renderSlList();
+}
+
+function closeSlModal() { $('slModal').style.display = 'none'; }
+
+function doSave() {
+  const name = $('slSaveName').value.trim();
+  if (!name) { alert('저장 이름을 입력해주세요.'); $('slSaveName').focus(); return; }
+  const saves = getSaves();
+  saves.unshift({ id: Date.now(), name, savedAt: new Date().toISOString(), data: collectState() });
+  if (saves.length > 30) saves.pop();
+  setSaves(saves);
+  renderSlList();
+  const btn = $('slSaveBtn');
+  const orig = btn.textContent;
+  btn.textContent = '✅ 저장됨!';
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+
+function doLoad(id) {
+  if (!confirm('현재 입력 내용을 덮어쓰고 불러오시겠습니까?')) return;
+  const entry = getSaves().find(s => s.id === id);
+  if (!entry) { alert('저장 데이터를 찾을 수 없습니다.'); return; }
+  applyState(entry.data);
+  closeSlModal();
+}
+
+function doDelete(id) {
+  if (!confirm('이 저장을 삭제하시겠습니까?')) return;
+  setSaves(getSaves().filter(s => s.id !== id));
+  renderSlList();
+}
+
+function renderSlList() {
+  const saves = getSaves();
+  const el = $('slList');
+  if (!saves.length) {
+    el.innerHTML = '<div style="text-align:center;color:#a09080;font-size:12px;padding:24px 0;">저장된 요율이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = saves.map(s => {
+    const dt = new Date(s.savedAt);
+    const dateStr = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    const wCount = s.data?.works?.length || 0;
+    const heads  = (s.data?.works || []).reduce((a, w) => a + (w.headcount || 0), 0);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid #ddd0bc;border-radius:7px;margin-bottom:6px;background:#fdf9f3;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:#4a3828;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+        <div style="font-size:10px;color:#9a8878;margin-top:2px;">${dateStr} · 업무 ${wCount}개 · 총 ${heads}명</div>
+      </div>
+      <button onclick="doLoad(${s.id})" style="background:#4d7a5a;color:white;border:none;padding:5px 13px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">불러오기</button>
+      <button onclick="doDelete(${s.id})" style="background:#c86858;color:white;border:none;padding:5px 10px;border-radius:5px;font-size:11px;cursor:pointer;">삭제</button>
+    </div>`;
+  }).join('');
+}
+
+// ================================================================
+// INIT — 예시 업무 1개 미리 추가
+// ================================================================
+addWork({
+  name: '경비', shiftType: 'alternate', hourlyRate: 10030,
+  headcount: 3, accidentRate: 0.7,
+  hoursRegular: 209, hoursOvertime: 120, hoursNight: 60, weekendDays: 0,
+});
+</script>
+</body>
+</html>

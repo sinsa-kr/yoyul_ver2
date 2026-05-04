@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\USER\\\\Desktop\\\\claudetest\\\\outsourcing\" status)",
+      "Bash(git init *)",
+      "Bash(git -C \"c:\\\\Users\\\\USER\\\\Desktop\\\\claudetest\\\\outsourcing\" add .)",
+      "Bash(git -C 'c:\\\\Users\\\\USER\\\\Desktop\\\\claudetest\\\\outsourcing' commit -m ' *)"
+    ]
+  }
+}
