@@ -1,0 +1,2338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>협력업체 요율산정 시스템</title>
+  <!--
+    [2026-07-09 개정]
+    · 2026년 법정 기준 반영: 최저시급 10,320원 / 국민연금 4.75% / 건강보험 3.595% / 장기요양 0.4724%
+    · 법정 기준값을 CONFIG 상수(BASE_YEAR, MIN_WAGE, DEFAULT_RATES)로 일원화 — 연 1회 이곳만 수정
+    · 버그 수정: 기타고정비 항목별 배분 표시, 업무명 이스케이프, 상세 아코디언 접힘, Chart/클립보드 가드
+    · 업무별 산재율 개별 입력 추가 (법정 비율 패널의 산재율은 신규 업무 기본값)
+    · 구조 정리: 미사용 Tailwind CDN 제거, 계산 파이프라인 computeAll() 통합, JSON 내보내기/가져오기
+    · 반응형(1280px/860px 분기) 및 인쇄 스타일 추가
+
+    [2026-07-28 개정] 업체 산정안 비교 기능 추가
+    · 상단 탭 신설 — ① 요율 산정(기존 3컬럼) / ② 산정안 비교
+    · 업체안 입력: 간편(1인 단가+인원) ↔ 상세(항목별) 토글, 업무별 자동 매칭
+    · 상세 항목에 '이윤'·'부가세' 추가 — 내 관리비는 업체의 관리비+이윤 합계와 대조
+    · 차이 판정 4단계(과다 +15%↑ / 주의 +5%↑ / 동등 ±5% / 절감 −5%↓) 하이라이트
+    · 월 차이 = 단가 효과 + 인원 효과 로 분해 (인원만 부풀린 견적 식별)
+    · 연간 환산 차이, 항목별 차이표·수평 막대 차트, 엑셀 '산정안 비교' 시트 추가
+    · 저장 스키마에 vendor 필드 추가 (구버전 저장본과 상호 호환, SL_KEY 유지)
+
+    [2026-07-28 개정] 엑셀 출력 전면 재설계
+    · 시트 3장 분리 — ① 요약(A4 세로 1장, 결재용) ② 산정내역 ③ 산정안 비교(업체값 있을 때만)
+    · 29열 가로표를 세로 전환 — 항목=행, 업무=열. 업무 10건에서도 13열이라 가로 스크롤 없음
+      (xlsx-js-style 은 틀고정을 쓸 수 없어, 열 수 통제 + Print_Titles 로 해결)
+    · B열 '단위'가 전체 합계 산식을 결정 — 원/인은 값×인원의 합, 원·명은 단순 합,
+      h·일·%·원/h는 인원 가중평균(회색). 1인 금액과 총액의 혼동을 구조로 차단
+    · 색 테마 분리 — EXCEL_THEMES / applyExcelTheme(). `let EXCEL_THEME` 한 줄로 전환
+      charcoal(차콜) · navy(감청) · kraft(먹빛) · ink(잉크블루, 선 위주) · 현재 ink
+      섹션마다 색조를 달리하던 4색 배지를 폐기하고 한 계열의 명암 차이로 통일
+      색은 '차이 표시(과다/주의/절감)'에만 싣고 소계는 굵기로만 강조
+    · font.name '맑은 고딕' 지정 (미지정 시 한글이 Calibri 로 폴백됨)
+    · 공통비용(복리후생·기타고정비)을 세로표에 흡수 — 곁가지 표가 사라져 열너비 충돌 해소
+    · 자동필터(산정내역은 단위 열 필터가 유용) · 인쇄 여백 · Print_Area / Print_Titles 적용
+    · sheetCtx().build() 버그 수정 — t:'z' 스텁 셀은 파일에 기록되지 않으므로 AOA 를 패딩
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <style>
+    body { font-family:'Malgun Gothic','맑은 고딕',sans-serif; background:#f5ede0; }
+    .panel { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; }
+    .sec-hdr { font-size:12px; font-weight:700; color:#4a3828; margin-bottom:8px; }
+    .inp { padding:5px 8px; border:1px solid #ddd0bc; border-radius:6px; font-size:12px; outline:none; width:100%; box-sizing:border-box; }
+    .inp:focus { border-color:#b07d4e; }
+    .inp-r { padding:3px 6px; border:1px solid #ddd0bc; border-radius:4px; font-size:12px; text-align:right; outline:none; width:70px; }
+    .inp-r:focus { border-color:#b07d4e; }
+    .rate-row { display:flex; align-items:center; justify-content:space-between; padding:3px 0; }
+    .res-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:13px; border-bottom:1px solid #f0e8d8; }
+    .rstbtn { color:#a09080; background:none; border:none; cursor:pointer; font-size:12px; padding:1px 3px; border-radius:3px; }
+    .rstbtn:hover { color:#4a3828; background:#f0e8d8; }
+    .sum-card { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; text-align:center; }
+
+    /* 탭 네비게이션 */
+    .tab-bar   { display:flex; gap:2px; background:#7a5c3e; padding:0 20px; box-shadow:0 2px 6px rgba(80,50,20,.18); }
+    .tab-btn   { background:#8d6d4c; color:#e8d8c0; border:none; padding:9px 22px; font-size:13.5px; font-weight:700; cursor:pointer; border-radius:8px 8px 0 0; font-family:inherit; display:flex; align-items:center; gap:7px; }
+    .tab-btn:hover  { background:#9a7a58; color:#fff; }
+    .tab-btn.active { background:#f5ede0; color:#4a3828; }
+    .tab-badge { font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:9px; background:#fdf9f3; }
+
+    /* 산정안 비교 탭 */
+    .cmp-grid { display:grid; grid-template-columns:1.3fr 54px 66px 96px 100px 96px 104px 104px 104px 58px 46px; align-items:center; }
+    .cmp-hdr  { font-size:11px; font-weight:700; color:#7a6a58; padding:7px 8px; background:#f0e8d8; border:1px solid #ddd0bc; border-bottom:none; border-radius:6px 6px 0 0; }
+    .cmp-row  { font-size:12px; border-bottom:1px solid #ede0cc; }
+    .inp-c    { padding:3px 6px; border:1px solid #cfc0a8; border-radius:4px; font-size:12px; text-align:right; outline:none; width:100%; box-sizing:border-box; background:#fdf9f3; }
+    .inp-c:focus    { border-color:#b07d4e; }
+    .inp-c[readonly]{ background:#f0e8d8; color:#7a6a58; cursor:default; }
+    /* 차이 판정 4단계 — 기존 팔레트 재사용 */
+    .d-cell  { text-align:right; padding:2px 5px; border-radius:4px; font-weight:600; }
+    .d-over  { color:#9a3828; background:#fef0ec; }
+    .d-warn  { color:#9e7040; background:#f5edd8; }
+    .d-eq    { color:#7a6a58; }
+    .d-under { color:#3d6b4a; background:#dff0e4; }
+
+    /* 레이아웃 */
+    .main-grid { display:grid; grid-template-columns:380px 1fr 280px; gap:14px; padding:14px; align-items:start; }
+    .left-col  { display:flex; flex-direction:column; gap:10px; max-height:calc(100vh - 118px); overflow-y:auto; padding-right:2px; }
+    .cmp-wrap  { padding:14px; display:flex; flex-direction:column; gap:12px; }
+    .cmp-bottom{ display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
+    .mid-col   { display:flex; flex-direction:column; gap:10px; }
+    .right-col { display:flex; flex-direction:column; gap:10px; }
+
+    /* 반응형 — 노트북/프로젝터 */
+    @media (max-width:1280px) {
+      .main-grid { grid-template-columns:340px 1fr; }
+      .left-col  { max-height:none; overflow-y:visible; }
+      .right-col { grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,1fr); align-items:start; }
+      .cmp-grid  { grid-template-columns:1.2fr 46px 58px 84px 88px 84px 92px 92px 92px 52px 40px; font-size:11px; }
+    }
+    @media (max-width:860px) {
+      .main-grid { grid-template-columns:1fr; }
+      .right-col { grid-template-columns:1fr; }
+      .cmp-bottom{ grid-template-columns:1fr; }
+    }
+
+    /* 인쇄 — 결재/보고용 */
+    @media print {
+      body { background:#fff; }
+      .no-print { display:none !important; }
+      .tab-bar  { display:none !important; }
+      .tab-pane { display:none !important; }
+      .tab-pane.active { display:block !important; }
+      .main-grid { display:block; padding:0; }
+      .left-col, .mid-col, .right-col { display:block; max-height:none !important; overflow:visible !important; }
+      .cmp-wrap { padding:0; }
+      .cmp-bottom { display:block; }
+      .panel, .sum-card { box-shadow:none; border:1px solid #ddd0bc; page-break-inside:avoid; margin-bottom:10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div style="background:#7a5c3e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(80,50,20,.25);">
+  <div>
+    <div style="font-size:18px;font-weight:700;">협력업체 요율산정 시스템</div>
+    <div style="font-size:11px;color:#d4b896;margin-top:2px;">업무별 교대근무 · 법정수당 · 4대보험 · 복리후생비 자동 반영 · <b style="color:#f0dcc0;">2026년 법정 기준</b></div>
+  </div>
+  <div class="no-print" style="display:flex;gap:8px;">
+    <button onclick="exportExcel()" style="background:#4d7a5a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">📥 엑셀 다운로드</button>
+    <button onclick="copyResult()" style="background:#5a8a6a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">결과 복사</button>
+    <button onclick="openSlModal()" style="background:#5a6a9a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">📂 저장/불러오기</button>
+    <button onclick="resetAll()" style="background:#8a7a6a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">초기화</button>
+  </div>
+</div>
+
+<!-- TAB BAR -->
+<div class="tab-bar no-print">
+  <button id="tabBtn_calc" class="tab-btn active" onclick="switchTab('calc')">① 요율 산정</button>
+  <button id="tabBtn_cmp"  class="tab-btn"        onclick="switchTab('cmp')">② 산정안 비교<span id="tabBadge_cmp" class="tab-badge" style="display:none;"></span></button>
+</div>
+
+<!-- SAVE/LOAD MODAL -->
+<div id="slModal" onclick="if(event.target===this)closeSlModal()" style="display:none;position:fixed;inset:0;background:rgba(60,40,20,0.55);z-index:2000;align-items:center;justify-content:center;">
+  <div style="background:#fdf9f3;border-radius:14px;width:520px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(60,30,10,.35);border:1px solid #d8c8a8;">
+    <div style="padding:14px 18px;border-bottom:1px solid #e8d8c0;display:flex;justify-content:space-between;align-items:center;background:#f5ede0;border-radius:14px 14px 0 0;">
+      <div style="font-size:15px;font-weight:700;color:#4a3828;">📂 요율 저장 / 불러오기</div>
+      <button onclick="closeSlModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#7a6a58;line-height:1;padding:2px 6px;">✕</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e8d8c0;background:#faf5ee;">
+      <div style="font-size:12px;font-weight:700;color:#5a3828;margin-bottom:6px;">현재 상태 저장</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="slSaveName" placeholder="저장 이름 (예: 경비·미화 2025년 1분기)"
+          style="flex:1;padding:6px 10px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;"
+          onkeydown="if(event.key==='Enter')doSave()">
+        <button onclick="doSave()" id="slSaveBtn" style="background:#7a5c3e;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">💾 저장</button>
+      </div>
+    </div>
+    <div style="padding:12px 18px 14px;flex:1;overflow-y:auto;">
+      <div style="font-size:12px;font-weight:700;color:#5a3828;margin-bottom:8px;">저장 목록</div>
+      <div id="slList"></div>
+    </div>
+    <div style="padding:10px 18px;border-top:1px solid #e8d8c0;background:#faf5ee;display:flex;gap:8px;align-items:center;border-radius:0 0 14px 14px;">
+      <button onclick="exportJSON()" style="background:#7a6a9a;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📤 JSON 내보내기</button>
+      <button onclick="$('jsonImport').click()" style="background:#6a8aa0;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📥 JSON 가져오기</button>
+      <input type="file" id="jsonImport" accept=".json,application/json" style="display:none;" onchange="importJSON(this)">
+      <span style="font-size:10px;color:#9a8878;">현재 입력 상태를 파일로 백업 · 다른 PC/브라우저로 이동</span>
+    </div>
+  </div>
+</div>
+
+<!-- MIN WAGE ALERT -->
+<div id="minWageAlert" style="display:none;background:#fef0ec;border-left:4px solid #c86858;color:#9a3828;padding:8px 20px;font-size:13px;"></div>
+
+<!-- ===================== TAB ① 요율 산정 ===================== -->
+<div id="tab_calc" class="tab-pane active">
+
+<!-- MAIN 3-COLUMN -->
+<div class="main-grid">
+
+  <!-- ===== LEFT PANEL ===== -->
+  <div class="left-col">
+
+    <!-- 업무 목록 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-hdr" style="margin-bottom:0;">👷 업무 목록</div>
+        <button onclick="addWork()" style="background:#a07040;color:white;border:none;padding:5px 13px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ 업무 추가</button>
+      </div>
+      <div id="workList"></div>
+    </div>
+
+    <!-- 법정 비율 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">⚙️ 법정 비율 설정</div>
+        <button onclick="toggleSec('ratesSec','ratesBtn')" id="ratesBtn" style="font-size:11px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;">접기</button>
+      </div>
+      <div id="ratesSec">
+        <div style="font-size:11px;font-weight:700;color:#6858a0;padding:4px 8px;background:#eae5f5;border-radius:4px;margin-bottom:6px;">4대보험 — 사업주 부담율 (%, 직접 수정 가능) <span style="font-weight:400;color:#9080b0;">· 2026년 기준</span></div>
+        <div style="padding:0 4px;">
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">국민연금</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rNP" value="4.75" min="0" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rNP')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">건강보험</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rHI" value="3.595" min="0" step="0.001" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rHI')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">장기요양</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rLT" value="0.4724" min="0" step="0.0001" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rLT')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row"><label style="font-size:11px;color:#4a3828;width:80px;">실업급여</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rEI1" value="0.9" min="0" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rEI1')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row" title="150인 미만 기업 기준 — 기업 규모에 따라 0.25 / 0.45 / 0.65 / 0.85%"><label style="font-size:10px;color:#4a3828;width:80px;">고용안정·<br>직업능력개발</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rEI2" value="0.25" min="0" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rEI2')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div class="rate-row" title="신규 업무 추가 시 기본값 — 업종별 상이하므로 업무 카드에서 개별 수정"><label style="font-size:12px;color:#4a3828;width:80px;">산재보험 <span style="font-size:9px;color:#a09080;">(기본)</span></label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rAcc" value="0.7" min="0" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rAcc')" class="rstbtn" title="기본값 복원">↺</button></div></div>
+          <div style="font-size:9.5px;color:#a09080;margin-top:4px;line-height:1.5;">※ 고용안정·직업능력개발 0.25%는 150인 미만 기준 (규모별 0.25~0.85%)<br>※ 국민연금은 연금개혁으로 2033년까지 매년 0.5%p 단계 인상 예정 — 연 1회 요율 확인 필요<br>※ 산재보험은 신규 업무의 기본값이며, 업무별 카드에서 개별 수정 가능</div>
+        </div>
+        <div style="border-top:1px solid #ddd0bc;padding-top:8px;margin-top:8px;">
+          <div style="font-size:11px;font-weight:700;color:#9e7040;padding:4px 8px;background:#f5edd8;border-radius:4px;margin-bottom:6px;">퇴직충당금 (%, 직접 수정 가능)</div>
+          <div style="padding:0 4px;">
+            <div class="rate-row"><label style="font-size:12px;color:#4a3828;width:80px;">충당 비율</label><div style="display:flex;align-items:center;gap:3px;"><input type="number" id="rRet" value="8.33" min="0" step="0.01" oninput="calculate()" class="inp-r"><span style="font-size:11px;color:#a09080;">%</span><button onclick="rvd('rRet')" class="rstbtn" title="기본값(8.33%) 복원">↺</button></div></div>
+            <div style="font-size:10px;color:#a09080;margin-top:3px;">기본값 8.33% = 1개월÷12개월 / DC형 연금 시 실납입율로 변경</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 복리후생비 (공통) -->
+    <div class="panel">
+      <div class="sec-hdr">🎁 복리후생비 <span style="font-size:10px;font-weight:400;color:#a09080;">전 업무 공통 · 1인 월 기준 (원)</span></div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_meal" checked onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_meal" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">식대</label><input type="number" min="0" id="wf_meal_v" value="200000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_trans" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_trans" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">교통비</label><input type="number" min="0" id="wf_trans_v" value="100000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_uni" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_uni" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">피복비</label><input type="number" min="0" id="wf_uni_v" value="50000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_bonus" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_bonus" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">명절상여</label><input type="number" min="0" id="wf_bonus_v" value="83333" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_health" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_health" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">건강검진</label><input type="number" min="0" id="wf_health_v" value="30000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_condo" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_condo" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">경조사비</label><input type="number" min="0" id="wf_condo_v" value="20000" oninput="calculate()" class="inp" style="flex:1;"></div>
+      </div>
+    </div>
+
+    <!-- 기타고정비 + 관리비율 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">💼 기타 고정비 <span style="font-size:10px;font-weight:400;color:#a09080;">월 합계 → 전체 인원 배분</span></div>
+        <button onclick="addFixed()" style="font-size:11px;background:#f0e2cc;color:#a07040;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:600;">+ 추가</button>
+      </div>
+      <div id="fixedRows" style="display:flex;flex-direction:column;gap:5px;"></div>
+      <div style="margin-top:8px;">
+        <label style="font-size:11px;color:#7a6a58;">관리비율 (%)</label>
+        <input type="number" id="mgmtRate" value="10" min="0" step="0.5" oninput="calculate()" class="inp" style="margin-top:3px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MIDDLE PANEL ===== -->
+  <div class="mid-col">
+
+    <!-- 요약 카드 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">전체 인원</div><div id="s_head" style="font-size:26px;font-weight:800;color:#5a7aaa;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">명</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">월 청구 총액</div><div id="s_monthly" style="font-size:20px;font-weight:800;color:#4d7a5a;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (관리비 포함)</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">연간 추정 금액</div><div id="s_annual" style="font-size:20px;font-weight:800;color:#a07040;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (×12개월)</div></div>
+    </div>
+
+    <!-- 업무별 요약 테이블 -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📋 업무별 청구 요약</div>
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:11px;font-weight:700;color:#7a6a58;padding:6px 8px;background:#f0e8d8;border-radius:6px 6px 0 0;border:1px solid #ddd0bc;border-bottom:none;">
+        <span>업무명</span><span style="text-align:center;">교대형태</span><span style="text-align:center;">인원</span><span style="text-align:right;">시급</span><span style="text-align:right;">1인 청구단가</span><span style="text-align:right;">소계</span>
+      </div>
+      <div id="workResultTbl" style="border:1px solid #ddd0bc;border-top:none;border-radius:0 0 6px 6px;min-height:40px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:12px;font-weight:700;padding:8px;background:#f5ede0;border-radius:6px;margin-top:4px;border:1px solid #c8a878;">
+        <span style="color:#a07040;">전체 합계</span><span></span><span id="r_tot_head" style="text-align:center;color:#a07040;"></span><span></span><span></span><span id="r_grand" style="text-align:right;color:#a07040;font-size:13px;"></span>
+      </div>
+    </div>
+
+    <!-- 업무별 인건비 + 법정부담금 상세 (아코디언) -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📊 업무별 비용 상세</div>
+      <div id="workDetailAccordion"></div>
+    </div>
+
+    <!-- 공통 비용 -->
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📌 공통 비용 상세 <span style="font-size:12px;font-weight:400;color:#7a6a58;">(전 업무 동일 적용)</span></div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;color:#3d6b4a;background:#dff0e4;padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid #5a8a6a;">복리후생비</div>
+        <div id="wf_det" style="padding:0 8px;"></div>
+        <div class="res-row" style="font-weight:700;color:#3d6b4a;border-bottom:none;padding:5px 8px;"><span>소계 (1인당)</span><span id="r_wf_sub">-</span></div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#9e7040;background:#f5edd8;padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid #c8a060;">기타 고정비 (전체 인원 배분)</div>
+        <div id="fx_det" style="padding:0 8px;"></div>
+        <div class="res-row" style="font-weight:700;color:#9e7040;border-bottom:none;padding:5px 8px;"><span>소계 (1인 배분)</span><span id="r_fx_sub">-</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT PANEL ===== -->
+  <div class="right-col">
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">비용 구성 비율</div><canvas id="pieChart" style="max-height:220px;"></canvas></div>
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">업무별 월 청구금액</div><canvas id="barChart" style="max-height:200px;"></canvas></div>
+    <div class="panel"><div style="font-size:13px;font-weight:700;color:#4a3828;margin-bottom:10px;">구성 비율 범례</div><div id="legendTbl" style="display:flex;flex-direction:column;gap:5px;"></div></div>
+  </div>
+
+</div><!-- /.main-grid -->
+</div><!-- /#tab_calc -->
+
+<!-- ===================== TAB ② 산정안 비교 ===================== -->
+<div id="tab_cmp" class="tab-pane" style="display:none;">
+<div class="cmp-wrap">
+
+  <!-- 업체 정보 바 -->
+  <div class="panel" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:7px;">
+      <span class="sec-hdr" style="margin-bottom:0;white-space:nowrap;">🏢 업체명</span>
+      <input type="text" id="cmpVendorName" placeholder="예: ○○산업개발(주)" oninput="onCmp()" class="inp" style="width:220px;">
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;border-left:1px solid #ddd0bc;padding-left:14px;" title="업체 견적이 부가세 포함 금액이면 켜세요. 내 산정에도 같은 세율이 가산되어 동일 기준으로 비교됩니다.">
+      <input type="checkbox" id="cmpVatOn" onchange="onCmp()" style="width:14px;height:14px;cursor:pointer;">
+      <label for="cmpVatOn" style="font-size:12px;color:#4a3828;cursor:pointer;white-space:nowrap;">부가세 포함 비교</label>
+      <input type="number" id="cmpVatRate" value="10" min="0" step="0.5" oninput="onCmp()" class="inp-r" style="width:56px;">
+      <span style="font-size:11px;color:#a09080;">%</span>
+    </div>
+    <div class="no-print" style="margin-left:auto;display:flex;gap:6px;">
+      <button onclick="setAllCmpMode('simple')" style="font-size:11px;background:#f0e2cc;color:#a07040;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:600;">전체 간편</button>
+      <button onclick="setAllCmpMode('detail')" style="font-size:11px;background:#f0e2cc;color:#a07040;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:600;">전체 상세</button>
+      <button onclick="clearVendor(true)" style="font-size:11px;background:#efe4dc;color:#9a6858;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:600;">업체값 지우기</button>
+    </div>
+  </div>
+
+  <!-- 안내 배너 -->
+  <div id="cmpHint" style="background:#eef3f8;border-left:4px solid #5a7aaa;color:#3a5a80;padding:8px 14px;font-size:12.5px;border-radius:0 6px 6px 0;">
+    업체가 제시한 <b>1인 청구단가</b>를 입력하면 비교가 시작됩니다. <b>▼ 상세</b>를 펼치면 어느 항목에서 차이가 나는지 분해됩니다.
+  </div>
+
+  <!-- 요약 카드 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+    <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">월 청구 차이</div><div id="c_monthly" style="font-size:21px;font-weight:800;color:#a09080;margin:4px 0;">-</div><div id="c_monthly_s" style="font-size:10px;color:#a09080;">업체 − 내 산정</div></div>
+    <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">연간 환산 차이</div><div id="c_annual" style="font-size:21px;font-weight:800;color:#a09080;margin:4px 0;">-</div><div id="c_annual_s" style="font-size:10px;color:#a09080;">×12개월</div></div>
+    <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">차이율</div><div id="c_ratio" style="font-size:21px;font-weight:800;color:#a09080;margin:4px 0;">-</div><div id="c_ratio_s" style="font-size:10px;color:#a09080;">내 산정 대비</div></div>
+    <div class="sum-card" title="월 차이 = 단가 효과 + 인원 효과"><div style="font-size:11px;color:#7a6a58;">차이 요인 분해</div><div id="c_eff_p" style="font-size:13.5px;font-weight:700;color:#5a7aaa;margin:5px 0 2px;">-</div><div id="c_eff_h" style="font-size:13.5px;font-weight:700;color:#8a7a6a;">-</div></div>
+  </div>
+
+  <!-- 업무별 비교 -->
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;">⚖️ 업무별 비교 <span id="cmpBasisTxt" style="font-size:11px;font-weight:400;color:#7a6a58;">· 공급가액 기준 (부가세 제외)</span></div>
+      <div style="display:flex;gap:5px;font-size:10.5px;">
+        <span class="d-cell d-over"  style="padding:2px 7px;">과다 +15%↑</span>
+        <span class="d-cell d-warn"  style="padding:2px 7px;">주의 +5%↑</span>
+        <span class="d-cell d-under" style="padding:2px 7px;">절감 −5%↓</span>
+      </div>
+    </div>
+    <div class="cmp-grid cmp-hdr">
+      <span>업무명</span>
+      <span style="text-align:center;">내 인원</span>
+      <span style="text-align:center;">업체 인원</span>
+      <span style="text-align:right;">내 1인단가</span>
+      <span style="text-align:center;">업체 1인단가</span>
+      <span style="text-align:right;">단가 차이</span>
+      <span style="text-align:right;">내 월소계</span>
+      <span style="text-align:right;">업체 월소계</span>
+      <span style="text-align:right;">월 차이</span>
+      <span style="text-align:right;">차이율</span>
+      <span></span>
+    </div>
+    <div id="cmpBody" style="border:1px solid #ddd0bc;border-top:none;border-radius:0 0 6px 6px;"></div>
+    <div id="cmpEmpty" style="display:none;padding:16px;text-align:center;color:#a09080;font-size:13px;border:1px solid #ddd0bc;border-top:none;border-radius:0 0 6px 6px;">탭 ①에서 업무를 추가하면 비교 행이 자동으로 생성됩니다.</div>
+    <div class="cmp-grid" style="font-size:12px;font-weight:700;padding:8px;background:#f5ede0;border-radius:6px;margin-top:4px;border:1px solid #c8a878;">
+      <span style="color:#a07040;">전체 합계</span>
+      <span id="c_myHead"  style="text-align:center;color:#a07040;">-</span>
+      <span id="c_vHead"   style="text-align:center;color:#a07040;">-</span>
+      <span></span><span></span><span></span>
+      <span id="c_myTot"   style="text-align:right;color:#4d7a5a;">-</span>
+      <span id="c_vTot"    style="text-align:right;color:#4d7a5a;">-</span>
+      <span id="c_totDiff" class="d-cell d-eq" style="font-size:12.5px;">-</span>
+      <span id="c_totRt"   class="d-cell d-eq">-</span>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- 하단 2컬럼 -->
+  <div class="cmp-bottom">
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;">📋 항목별 차이 <span style="font-size:11px;font-weight:400;color:#7a6a58;">전체 인원 기준 · 월</span></div>
+      <div id="cmpItemNote" style="font-size:10.5px;color:#a09080;margin:3px 0 8px;"></div>
+      <div id="cmpItemTbl"></div>
+    </div>
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;color:#4a3828;margin-bottom:10px;">📊 항목별 차이 그래프</div>
+      <canvas id="cmpChart" style="max-height:320px;"></canvas>
+      <div id="cmpChartEmpty" style="display:none;padding:30px 10px;text-align:center;color:#a09080;font-size:12.5px;line-height:1.6;">업무를 <b>▼ 상세</b>로 펼쳐<br>항목별 금액을 입력하면 그래프가 표시됩니다.</div>
+    </div>
+  </div>
+
+</div><!-- /.cmp-wrap -->
+</div><!-- /#tab_cmp -->
+
+<script>
+// ================================================================
+// CONFIG — ★ 법정 기준값 (연 1회 이 블록만 갱신하면 전체 반영) ★
+// ================================================================
+const BASE_YEAR = 2026;
+const MIN_WAGE  = 10320; // 2026년 법정 최저시급 (고용노동부 고시 제2025-47호, 2026.1.1~12.31)
+
+const DEFAULT_RATES = {
+  rNP:  4.75,   // 국민연금 사업주 (총 9.5% — 연금개혁으로 2033년 13%까지 매년 0.5%p 인상 예정)
+  rHI:  3.595,  // 건강보험 사업주 (총 7.19%)
+  rLT:  0.4724, // 장기요양 사업주 — 보수월액 대비 총 0.9448%(건강보험료의 13.14%)의 1/2
+  rEI1: 0.9,    // 고용보험 실업급여 사업주
+  rEI2: 0.25,   // 고용안정·직업능력개발 — 150인 미만 기준 (규모별 0.25/0.45/0.65/0.85%)
+  rAcc: 0.7,    // 산재보험 기본값 — 업종별 상이, 업무 카드에서 개별 수정
+  rRet: 8.33,   // 퇴직충당금 (1/12)
+  mgmtRate: 10, // 관리비율
+};
+
+const SHIFT_DEF = {
+  day:       { regular:209, overtime:0,   night:0,   label:'주간고정' },
+  shift2:    { regular:174, overtime:52,  night:78,  label:'2교대' },
+  shift3:    { regular:174, overtime:0,   night:58,  label:'3교대' },
+  shift43:   { regular:182, overtime:8,   night:40,  label:'4조3교대' },
+  alternate: { regular:209, overtime:120, night:60,  label:'격일제' },
+};
+
+const SHIFT_BASIS = {
+  day: {
+    title: '주간고정 — 월~금 1일 8시간 근무',
+    items: [
+      ['소정근로 (209h)', '주 40h + 주휴 8h = 주 48h', '48 × (365÷7÷12) ≈ 209h/월'],
+      ['연장근로 (0h)',   '해당 없음 — 법정근로시간(주 40h) 이내 운영', '—'],
+      ['야간근로 (0h)',   '해당 없음 — 22:00~06:00 시간대 미해당', '—'],
+    ],
+    note: '근거: 근로기준법 제50조 / 최저임금법 시행령 제5조 (월 통상임금 산정기준 209시간)',
+  },
+  shift2: {
+    title: '2조 2교대 — 주간조(06~18) / 야간조(18~06) 교대',
+    items: [
+      ['소정근로 (174h)', '1일 실근로 12h, 2조 교대 주기 반영 월 환산 (주 40h 기준)', '≈ 174h/월'],
+      ['연장근로 (52h)',  '일 8h 초과분 × 근무일수 — 가산분 0.5만 계상 (시급×h×0.5)', '≈ 52h/월'],
+      ['야간근로 (78h)',  '22:00~06:00 해당 시간 × 근무일수 — 가산분 0.5만 계상', '≈ 78h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  shift3: {
+    title: '3조 3교대 — 1조(06~14) / 2조(14~22) / 3조(22~06) 순환',
+    items: [
+      ['소정근로 (174h)', '1일 8h, 3조 순환 (주 40h 기준) 월 환산', '≈ 174h/월'],
+      ['연장근로 (0h)',   '법정 근로시간 이내 설계 — 교대 설계상 연장 없음', '—'],
+      ['야간근로 (58h)',  '3조(야간): 22:00~06:00 (8h) × 월 야간조 근무일수 — 가산분 0.5만 계상', '≈ 58h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  shift43: {
+    title: '4조 3교대 — A조(08~16) / B조(16~24) / C조(00~08), 1조 휴무 순환',
+    items: [
+      ['소정근로 (182h)', '4조 중 3조 근무: 주 평균 약 42h, 월 환산', '≈ 182h/월'],
+      ['연장근로 (8h)',   '주 40h 초과 약 2h × 월 4.34주 — 가산분 0.5만 계상', '≈ 8h/월'],
+      ['야간근로 (40h)',  'C조: 00:00~08:00 (8h) × 월 야간조 근무일수 — 가산분 0.5만 계상', '≈ 40h/월'],
+    ],
+    note: '노사 단체협약·근무 설계에 따라 실제 수치 상이할 수 있음 — 직접 수정 가능',
+  },
+  alternate: {
+    title: '격일제 — 24시간 근무 후 24시간 비번 반복',
+    items: [
+      ['소정근로 (209h)', '월 통상임금 산정기준: 주 48h(40h+주휴8h) × (365÷7÷12)', '≈ 209h/월'],
+      ['연장근로 (120h)', '근무일 실근로 16h 중 8h 초과분 8h × 월 15일 — 가산분 0.5만 계상', '≈ 120h/월'],
+      ['야간근로 (60h)',  '22:00~06:00 중 야간 4h × 월 15일 — 가산분 0.5만 계상', '≈ 60h/월'],
+    ],
+    note: '월 근무일수는 30일 기준 약 15일 (실제 달력·해당 월에 따라 상이) — 직접 수정 가능',
+  },
+};
+
+const WK_COLORS = ['#7a9fcc','#70b898','#d4a060','#d07878','#9880cc','#d87aaa','#5ab8cc','#90c070'];
+
+const WF_ITEMS = [
+  {id:'wf_meal',   lbl:'식대'},
+  {id:'wf_trans',  lbl:'교통비'},
+  {id:'wf_uni',    lbl:'피복비'},
+  {id:'wf_bonus',  lbl:'명절상여'},
+  {id:'wf_health', lbl:'건강검진'},
+  {id:'wf_condo',  lbl:'경조사비'},
+];
+
+// ── 업체 산정안 비교 ──────────────────────────────────────
+// 상세 입력 필드 — DOM id = `v_${key}_${workId}`
+const VENDOR_FIELDS = ['base','ot','nt','hol','ins','ret','wf','fx','mgmt','profit','vat'];
+const VENDOR_SUPPLY = VENDOR_FIELDS.filter(k => k !== 'vat'); // 공급가액 구성 (부가세 제외)
+
+// 비교 항목 — mine(r): 내 산정 1인 월 금액 / vk: 대응 업체 필드(복수 합산)
+const CMP_ITEMS = [
+  { key:'base', lbl:'기본급',          vk:['base'],           mine:r => r.wBase },
+  { key:'ot',   lbl:'연장수당',        vk:['ot'],             mine:r => r.wOT },
+  { key:'nt',   lbl:'야간수당',        vk:['nt'],             mine:r => r.wNt },
+  { key:'hol',  lbl:'휴일수당',        vk:['hol'],            mine:r => r.wHol },
+  { key:'ins',  lbl:'4대보험',         vk:['ins'],            mine:r => r.vPen + r.vHlt + r.vLtc + r.vEmp + r.vAcc },
+  { key:'ret',  lbl:'퇴직충당금',      vk:['ret'],            mine:r => r.vRet },
+  { key:'wf',   lbl:'복리후생비',      vk:['wf'],             mine:r => r.wfTotal },
+  { key:'fx',   lbl:'기타고정비',      vk:['fx'],             mine:r => r.fxPerPerson },
+  { key:'mgmt', lbl:'일반관리비+이윤', vk:['mgmt','profit'],  mine:r => r.mgmt }, // 내 관리비 ↔ 업체 관리비+이윤
+];
+
+// 상세 입력표 행 — cmp:false 는 개별 비교 없이 아래 '관리비+이윤 계'로만 대조
+const CMP_INPUT_ROWS = [
+  { k:'base',   lbl:'기본급',     cmp:true },
+  { k:'ot',     lbl:'연장수당',   cmp:true },
+  { k:'nt',     lbl:'야간수당',   cmp:true },
+  { k:'hol',    lbl:'휴일수당',   cmp:true },
+  { k:'ins',    lbl:'4대보험',    cmp:true },
+  { k:'ret',    lbl:'퇴직충당금', cmp:true },
+  { k:'wf',     lbl:'복리후생비', cmp:true },
+  { k:'fx',     lbl:'기타고정비', cmp:true },
+  { k:'mgmt',   lbl:'일반관리비', cmp:false },
+  { k:'profit', lbl:'이윤',       cmp:false },
+];
+
+const CMP_TH  = { warn:0.05, over:0.15 };  // ±5% 동등 / +5~15% 주의 / +15%↑ 과다
+const CMP_LBL = { over:'과다', warn:'주의', eq:'동등', under:'절감' };
+const VAT_DEF = 10;
+
+let wkCnt = 0, fxCnt = 0;
+let pieChart = null, barChart = null, cmpChart = null;
+let activeTab = 'calc';
+
+// ================================================================
+// UTIL
+// ================================================================
+const $   = id => document.getElementById(id);
+const gv  = id => Math.max(0, parseFloat($(id)?.value) || 0); // 음수 입력 방어
+const gc  = id => $(id)?.checked || false;
+const fmt  = n => Math.round(n).toLocaleString('ko-KR') + '원';
+const fmtn = n => Math.round(n).toLocaleString('ko-KR');
+const esc  = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function rvd(id) { $(id).value = DEFAULT_RATES[id]; calculate(); } // CONFIG 기본값 복원
+
+function toggleSec(secId, btnId) {
+  const s = $(secId), b = $(btnId);
+  if (s.style.display === 'none') { s.style.display='block'; b.textContent='접기'; }
+  else { s.style.display='none'; b.textContent='펼치기'; }
+}
+
+// 값이 같으면 건너뛰는 DOM 갱신 — 재렌더 시 입력 포커스 보존의 전제
+const setTxt = (id, v) => { const e = $(id); if (e && e.textContent !== v) e.textContent = v; };
+const setCls = (id, cls) => { const e = $(id); if (e && e.className !== cls) e.className = cls; };
+const sgn    = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtn(Math.abs(n)); // 부호 + 절대값
+const pctn   = rt => rt === null ? '—' : (rt > 0 ? '+' : rt < 0 ? '−' : '') + (Math.abs(rt) * 100).toFixed(1) + '%';
+
+function switchTab(name) {
+  activeTab = name;
+  for (const t of ['calc','cmp']) {
+    const on = (t === name);
+    $('tab_' + t).style.display = on ? 'block' : 'none';
+    $('tab_' + t).classList.toggle('active', on);
+    $('tabBtn_' + t).classList.toggle('active', on);
+  }
+  calculate();                     // 표시 직후 재계산 — 숨김 중 생성하지 못한 차트를 여기서 생성
+  requestAnimationFrame(() => {    // 레이아웃 확정 후 캔버스 리사이즈
+    if (name === 'calc') { pieChart?.resize(); barChart?.resize(); }
+    else cmpChart?.resize();
+  });
+}
+
+function toggleDetail(id) {
+  const el = $('detail_body_' + id);
+  const btn = $('detail_btn_' + id);
+  if (!el) return;
+  if (el.style.display === 'none') { el.style.display='block'; btn.textContent='▲ 접기'; }
+  else { el.style.display='none'; btn.textContent='▼ 상세 보기'; }
+}
+
+function getShiftBasisHTML(shiftType) {
+  const b = SHIFT_BASIS[shiftType];
+  if (!b) return '';
+  return `<div style="background:#f5ede0;border-radius:5px;padding:8px 10px;margin-top:7px;border:1px solid #d8c8a8;">
+    <div style="font-size:11px;font-weight:700;color:#4a3828;margin-bottom:6px;">📋 ${b.title}</div>
+    <table style="width:100%;font-size:10px;border-collapse:collapse;">
+      <thead><tr style="background:#e8d4bc;">
+        <th style="text-align:left;padding:3px 6px;color:#5a3828;font-weight:700;width:108px;">구분</th>
+        <th style="text-align:left;padding:3px 6px;color:#5a3828;font-weight:700;">산정 기준</th>
+        <th style="text-align:right;padding:3px 6px;color:#5a3828;font-weight:700;width:94px;">적용 기본값</th>
+      </tr></thead>
+      <tbody>${b.items.map((row, i) => `
+        <tr style="${i%2===1?'background:#faf3e8':''}">
+          <td style="padding:3px 6px;color:#5a4838;font-weight:600;">${row[0]}</td>
+          <td style="padding:3px 6px;color:#6a5848;">${row[1]}</td>
+          <td style="padding:3px 6px;text-align:right;color:#9a7040;font-weight:600;">${row[2]}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ${b.note ? `<div style="font-size:10px;color:#9a8070;margin-top:5px;padding-top:4px;border-top:1px dashed #d0b898;">※ ${b.note}</div>` : ''}
+  </div>`;
+}
+
+function toggleShiftBasis(id) {
+  const el = $(`shiftBasis_${id}`);
+  const btn = $(`basisBtn_${id}`);
+  if (!el) return;
+  if (el.style.display === 'none') {
+    el.innerHTML = getShiftBasisHTML($(`wShift_${id}`)?.value || 'day');
+    el.style.display = 'block';
+    btn.textContent = '접기';
+  } else {
+    el.style.display = 'none';
+    btn.textContent = '📋 산정 근거';
+  }
+}
+
+// ================================================================
+// WORK ITEMS
+// ================================================================
+function addWork(p) {
+  const id = ++wkCnt;
+  const col = WK_COLORS[(id - 1) % WK_COLORS.length];
+  p = p || { name:'', shiftType:'day', hourlyRate:MIN_WAGE, headcount:1, hoursRegular:209, hoursOvertime:0, hoursNight:0, weekendDays:0 };
+  // 산재율: 저장본에 값이 있으면 사용, 없으면(구버전 저장 포함) 전역 기본값
+  const acc = (p.accidentRate !== undefined && p.accidentRate !== null) ? p.accidentRate : gv('rAcc');
+
+  const div = document.createElement('div');
+  div.id = `work_${id}`;
+  div.style.cssText = `border-radius:8px;padding:12px;margin-bottom:8px;border:1px solid #ddd0bc;border-left:4px solid ${col};background:#faf5ee;`;
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+      <input type="text" id="wName_${id}" value="${esc(p.name)}" placeholder="업무명 입력"
+        oninput="calculate()"
+        style="flex:1;padding:5px 8px;border:1px solid #ddd0bc;border-radius:6px;font-size:13px;font-weight:600;outline:none;background:#fdf9f3;">
+      <select id="wShift_${id}" onchange="onShiftChange(${id})"
+        style="padding:5px 6px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;">
+        <option value="day"       ${p.shiftType==='day'      ?'selected':''}>주간고정</option>
+        <option value="shift2"    ${p.shiftType==='shift2'   ?'selected':''}>2교대</option>
+        <option value="shift3"    ${p.shiftType==='shift3'   ?'selected':''}>3교대</option>
+        <option value="shift43"   ${p.shiftType==='shift43'  ?'selected':''}>4조3교대</option>
+        <option value="alternate" ${p.shiftType==='alternate'?'selected':''}>격일제</option>
+      </select>
+      <button onclick="removeWork(${id})" style="color:#c06060;background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;" title="삭제">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr;gap:6px;margin-bottom:7px;">
+      <div>
+        <label style="font-size:10px;color:#7a6a58;">시급 (원)</label>
+        <input type="number" id="wRate_${id}" value="${p.hourlyRate}" min="0" oninput="calculate()"
+          style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
+        <div id="wWarn_${id}" style="display:none;font-size:10px;color:#c06060;margin-top:1px;">⚠ 최저임금 미만</div>
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a6a58;">인원수 (명)</label>
+        <input type="number" id="wHead_${id}" value="${p.headcount}" min="1" oninput="calculate()"
+          style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
+      </div>
+      <div title="업종별 산재보험료율 — 업무마다 개별 적용">
+        <label style="font-size:10px;color:#7a6a58;">산재율 (%)</label>
+        <input type="number" id="wAcc_${id}" value="${acc}" min="0" step="0.01" oninput="calculate()"
+          style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
+      </div>
+    </div>
+    <div style="background:#f0e9dc;border-radius:5px;padding:7px 8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <div style="font-size:10px;color:#7a6050;font-weight:600;">월 근무시간 — 교대형태 선택 시 자동입력, 직접 수정 가능</div>
+        <button type="button" onclick="toggleShiftBasis(${id})" id="basisBtn_${id}" style="font-size:10px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;margin-left:6px;white-space:nowrap;">📋 산정 근거</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;">
+        <div><label style="font-size:10px;color:#7a6a58;">소정 (h)</label><input type="number" id="wReg_${id}" value="${p.hoursRegular}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">연장 (h)</label><input type="number" id="wOT_${id}" value="${p.hoursOvertime}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">야간 (h)</label><input type="number" id="wNt_${id}" value="${p.hoursNight}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">주말 (일)</label><input type="number" id="wWk_${id}" value="${p.weekendDays}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+      </div>
+      <div id="shiftBasis_${id}" style="display:none;"></div>
+    </div>
+  `;
+  $('workList').appendChild(div);
+  calculate();
+}
+
+function removeWork(id) {
+  $(`work_${id}`)?.remove();
+  calculate();
+}
+
+function onShiftChange(id) {
+  const def = SHIFT_DEF[$(`wShift_${id}`)?.value];
+  if (!def) return;
+  $(`wReg_${id}`).value = def.regular;
+  $(`wOT_${id}`).value  = def.overtime;
+  $(`wNt_${id}`).value  = def.night;
+  const basisEl = $(`shiftBasis_${id}`);
+  if (basisEl && basisEl.style.display !== 'none') {
+    basisEl.innerHTML = getShiftBasisHTML($(`wShift_${id}`)?.value);
+  }
+  calculate();
+}
+
+function collectWorks() {
+  const items = [];
+  for (let i = 1; i <= wkCnt; i++) {
+    if (!$(`work_${i}`)) continue;
+    const rate = gv(`wRate_${i}`);
+    const warnEl = $(`wWarn_${i}`);
+    if (warnEl) warnEl.style.display = (rate > 0 && rate < MIN_WAGE) ? 'block' : 'none';
+    items.push({
+      id: i,
+      name:          $(`wName_${i}`)?.value || `업무 ${i}`,
+      shiftType:     $(`wShift_${i}`)?.value || 'day',
+      hourlyRate:    rate,
+      headcount:     Math.max(1, Math.round(gv(`wHead_${i}`))),
+      accidentRate:  gv(`wAcc_${i}`) / 100,
+      hoursRegular:  gv(`wReg_${i}`),
+      hoursOvertime: gv(`wOT_${i}`),
+      hoursNight:    gv(`wNt_${i}`),
+      weekendDays:   gv(`wWk_${i}`),
+    });
+  }
+  return items;
+}
+
+// ================================================================
+// FIXED / WELFARE COLLECT
+// ================================================================
+function addFixed() {
+  const id = ++fxCnt;
+  const div = document.createElement('div');
+  div.id = `fxRow_${id}`;
+  div.style.cssText = 'display:flex;align-items:center;gap:5px;';
+  div.innerHTML = `
+    <input type="text" placeholder="항목명" id="fxName_${id}" oninput="calculate()"
+      style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
+    <input type="number" placeholder="금액" id="fxAmt_${id}" value="0" min="0" oninput="calculate()"
+      style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
+    <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>
+  `;
+  $('fixedRows').appendChild(div);
+  calculate();
+}
+
+function removeFixed(id) { $(`fxRow_${id}`)?.remove(); calculate(); }
+
+function collectFixed() {
+  let total = 0;
+  const details = [];
+  for (let i = 1; i <= fxCnt; i++) {
+    if (!$(`fxRow_${i}`)) continue;
+    const name = $(`fxName_${i}`)?.value || '미입력';
+    const amt  = gv(`fxAmt_${i}`);
+    total += amt;
+    details.push({ name, amt });
+  }
+  return { total, details };
+}
+
+function collectWelfare() {
+  let total = 0;
+  const details = [];
+  for (const w of WF_ITEMS) {
+    if (gc(w.id)) {
+      const amt = gv(w.id + '_v');
+      total += amt;
+      details.push({ lbl: w.lbl, amt });
+    }
+  }
+  return { total, details };
+}
+
+// ================================================================
+// CALCULATION ENGINE
+// ================================================================
+function calcOne(w, rates, wfTotal, fxPerPerson, mgmtRate) {
+  const hHol   = w.weekendDays * 8;
+  const wBase  = w.hourlyRate * w.hoursRegular;
+  const wOT    = w.hourlyRate * w.hoursOvertime * 0.5;
+  const wNt    = w.hourlyRate * w.hoursNight    * 0.5;
+  const wHol   = w.hourlyRate * hHol            * 0.5;
+  const wSub   = wBase + wOT + wNt + wHol;
+
+  const vRet   = wSub * rates.ret;
+  const vPen   = wSub * rates.pen;
+  const vHlt   = wSub * rates.hlt;
+  const vLtc   = wSub * rates.ltc;
+  const vEmp1  = wSub * rates.emp1;
+  const vEmp2  = wSub * rates.emp2;
+  const vEmp   = vEmp1 + vEmp2;
+  const vAcc   = wSub * w.accidentRate;
+  const lSub   = vRet + vPen + vHlt + vLtc + vEmp + vAcc;
+
+  const netPer = wSub + lSub + wfTotal + fxPerPerson;
+  const mgmt   = netPer * mgmtRate;
+  const finPer = netPer + mgmt;
+  const sub    = finPer * w.headcount;
+  const hBill  = w.hoursRegular > 0 ? finPer / w.hoursRegular : 0;
+
+  return { ...w, hHol, wBase, wOT, wNt, wHol, wSub, vRet, vPen, vHlt, vLtc, vEmp1, vEmp2, vEmp, vAcc, lSub, wfTotal, fxPerPerson, netPer, mgmt, finPer, sub, hBill };
+}
+
+// 입력 수집 → 계산까지 한 번에 (calculate / copyResult / exportExcel 공용)
+function computeAll() {
+  const works   = collectWorks();
+  const welfare = collectWelfare();
+  const fixed   = collectFixed();
+  const mgmtR   = gv('mgmtRate') / 100;
+  const rates   = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
+  const totHead = works.reduce((s, w) => s + w.headcount, 0);
+  const fxPer   = totHead > 0 ? fixed.total / totHead : 0;
+  const results  = works.map(w => calcOne(w, rates, welfare.total, fxPer, mgmtR));
+  const grandTot = results.reduce((s, r) => s + r.sub, 0);
+  return { works, welfare, fixed, mgmtR, rates, totHead, fxPer, results, grandTot };
+}
+
+// 비용 7분류 집계 — 화면 도넛차트 / 엑셀 요약시트 공용 (전체 인원 기준 월 금액)
+// Σ aggCost === grandTot (반올림 오차 범위)
+function aggCost(results) {
+  return results.reduce((a, r) => ({
+    wBase: a.wBase + r.wBase * r.headcount,
+    wAlw:  a.wAlw  + (r.wOT + r.wNt + r.wHol) * r.headcount,
+    vRet:  a.vRet  + r.vRet  * r.headcount,
+    ins:   a.ins   + (r.vPen + r.vHlt + r.vLtc + r.vEmp + r.vAcc) * r.headcount,
+    wf:    a.wf    + r.wfTotal * r.headcount,
+    fx:    a.fx    + r.fxPerPerson * r.headcount,
+    mgmt:  a.mgmt  + r.mgmt  * r.headcount,
+  }), { wBase:0, wAlw:0, vRet:0, ins:0, wf:0, fx:0, mgmt:0 });
+}
+
+// 라벨·순서·색 단일 출처 — 도넛/범례/엑셀이 모두 이걸 참조
+const AGG_LBL = [
+  ['wBase', '기본급',         '#7a9fcc'],
+  ['wAlw',  '법정수당(가산)', '#b0c8e0'],
+  ['vRet',  '퇴직충당금',     '#a090c0'],
+  ['ins',   '4대보험',        '#c4b0e0'],
+  ['wf',    '복리후생비',     '#6aaa8a'],
+  ['fx',    '기타고정비',     '#c8a870'],
+  ['mgmt',  '관리비',         '#b8a898'],
+];
+
+function calculate() {
+  const base = computeAll();
+  const { works, welfare, fixed, rates, totHead, fxPer, results, grandTot } = base;
+
+  $('minWageAlert').style.display = works.some(w => w.hourlyRate > 0 && w.hourlyRate < MIN_WAGE) ? 'block' : 'none';
+
+  const agg = aggCost(results);
+
+  // Summary cards
+  $('s_head').textContent    = totHead || '-';
+  $('s_monthly').textContent = grandTot > 0 ? fmtn(grandTot) : '-';
+  $('s_annual').textContent  = grandTot > 0 ? fmtn(grandTot * 12) : '-';
+
+  // Work table
+  renderWorkTable(results, totHead, grandTot);
+
+  // Per-work accordion detail
+  renderAccordion(results, rates);
+
+  // Common detail
+  renderCommon(welfare, fixed, fxPer, totHead);
+
+  // Charts
+  renderCharts(agg, results);
+
+  // 업체 산정안 비교 (탭 ②)
+  renderCompare(base);
+}
+
+// ================================================================
+// RENDER: WORK TABLE
+// ================================================================
+function renderWorkTable(results, totHead, grandTot) {
+  const tbody = $('workResultTbl');
+  if (!results.length) {
+    tbody.innerHTML = '<div style="padding:16px;text-align:center;color:#a09080;font-size:13px;">업무를 추가해주세요</div>';
+    $('r_tot_head').textContent = '-';
+    $('r_grand').textContent = '-';
+    return;
+  }
+  tbody.innerHTML = results.map((r, i) => {
+    const col = WK_COLORS[(r.id - 1) % WK_COLORS.length];
+    return `
+      <div style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:12px;padding:8px;border-bottom:1px solid #ede0cc;align-items:center;${i%2?'background:#faf5ee':''}">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+          <span style="font-weight:600;">${esc(r.name)}</span>
+        </div>
+        <span style="text-align:center;color:#7a6a58;">${SHIFT_DEF[r.shiftType]?.label||r.shiftType}</span>
+        <span style="text-align:center;">${r.headcount}명</span>
+        <span style="text-align:right;">${fmtn(r.hourlyRate)}</span>
+        <span style="text-align:right;font-weight:600;color:#a07040;">${fmt(r.finPer)}</span>
+        <span style="text-align:right;font-weight:700;color:#4d7a5a;">${fmt(r.sub)}</span>
+      </div>`;
+  }).join('');
+  $('r_tot_head').textContent = `${totHead}명`;
+  $('r_grand').textContent = fmt(grandTot);
+}
+
+// ================================================================
+// RENDER: ACCORDION DETAIL
+// ================================================================
+function renderAccordion(results, rates) {
+  if (!results.length) { $('workDetailAccordion').innerHTML = '<div style="color:#a09080;font-size:13px;padding:8px 0;">업무를 추가하면 상세 내역이 표시됩니다.</div>'; return; }
+  // 재렌더 시 펼침 상태 유지 (입력할 때마다 접히는 문제 방지)
+  const open = new Set();
+  document.querySelectorAll('[id^="detail_body_"]').forEach(el => {
+    if (el.style.display !== 'none') open.add(el.id.replace('detail_body_', ''));
+  });
+  $('workDetailAccordion').innerHTML = results.map(r => {
+    const col = WK_COLORS[(r.id - 1) % WK_COLORS.length];
+    const isOpen = open.has(String(r.id));
+    return `
+      <div style="border:1px solid #ddd0bc;border-radius:8px;margin-bottom:8px;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#f5ede0;border-bottom:1px solid #ddd0bc;cursor:pointer;" onclick="toggleDetail(${r.id})">
+          <div style="display:flex;align-items:center;gap:7px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:${col};"></div>
+            <span style="font-size:13px;font-weight:700;">${esc(r.name)}</span>
+            <span style="font-size:11px;color:#7a6a58;">${r.headcount}명 · ${SHIFT_DEF[r.shiftType]?.label||''} · 시급 ${fmtn(r.hourlyRate)}원</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;font-weight:700;color:#a07040;">1인 ${fmt(r.finPer)}</span>
+            <button id="detail_btn_${r.id}" style="font-size:11px;color:#9b7050;background:none;border:none;cursor:pointer;">${isOpen ? '▲ 접기' : '▼ 상세 보기'}</button>
+          </div>
+        </div>
+        <div id="detail_body_${r.id}" style="display:${isOpen ? 'block' : 'none'};padding:10px 12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#4a6a9a;background:#e0eaf5;padding:4px 8px;border-radius:4px;margin-bottom:5px;">① 인건비</div>
+              <div class="res-row"><span style="color:#4a3828;">기본급 <span style="font-size:10px;color:#a09080;">(${r.hoursRegular}h)</span></span><span style="font-weight:600;">${fmt(r.wBase)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">연장수당 <span style="font-size:10px;color:#a09080;">(${r.hoursOvertime}h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wOT)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">야간수당 <span style="font-size:10px;color:#a09080;">(${r.hoursNight}h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wNt)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">휴일수당 <span style="font-size:10px;color:#a09080;">(${r.weekendDays}일×8h×0.5)</span></span><span style="font-weight:600;">${fmt(r.wHol)}</span></div>
+              <div class="res-row" style="font-weight:700;color:#4a6a9a;border-bottom:none;"><span>소계</span><span>${fmt(r.wSub)}</span></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#6858a0;background:#eae5f5;padding:4px 8px;border-radius:4px;margin-bottom:5px;">② 법정부담금</div>
+              <div class="res-row"><span style="color:#4a3828;">퇴직충당금 <span style="font-size:10px;color:#a09080;">(${gv('rRet')}%)</span></span><span style="font-weight:600;">${fmt(r.vRet)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">국민연금 <span style="font-size:10px;color:#a09080;">(${gv('rNP')}%)</span></span><span style="font-weight:600;">${fmt(r.vPen)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">건강보험 <span style="font-size:10px;color:#a09080;">(${gv('rHI')}%)</span></span><span style="font-weight:600;">${fmt(r.vHlt)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">장기요양 <span style="font-size:10px;color:#a09080;">(${gv('rLT')}%)</span></span><span style="font-weight:600;">${fmt(r.vLtc)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">실업급여 <span style="font-size:10px;color:#a09080;">(${gv('rEI1')}%)</span></span><span style="font-weight:600;">${fmt(r.vEmp1)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">고용안정·직업능력개발 <span style="font-size:10px;color:#a09080;">(${gv('rEI2')}%)</span></span><span style="font-weight:600;">${fmt(r.vEmp2)}</span></div>
+              <div class="res-row"><span style="color:#4a3828;">산재보험 <span style="font-size:10px;color:#a09080;">(${(r.accidentRate*100).toFixed(2)}%)</span></span><span style="font-weight:600;">${fmt(r.vAcc)}</span></div>
+              <div class="res-row" style="font-weight:700;color:#6858a0;border-bottom:none;"><span>소계</span><span>${fmt(r.lSub)}</span></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid #ddd0bc;margin-top:8px;padding-top:8px;">
+            <div class="res-row"><span style="color:#4a3828;">복리후생비 (공통)</span><span style="font-weight:600;">${fmt(r.wfTotal)}</span></div>
+            <div class="res-row"><span style="color:#4a3828;">기타고정비 (1인 배분)</span><span style="font-weight:600;">${fmt(r.fxPerPerson)}</span></div>
+            <div class="res-row"><span style="font-weight:700;">1인 월 순비용</span><span style="font-weight:700;">${fmt(r.netPer)}</span></div>
+            <div class="res-row"><span style="color:#4a3828;">관리비 (${gv('mgmtRate')}%)</span><span style="font-weight:600;">${fmt(r.mgmt)}</span></div>
+            <div style="display:flex;justify-content:space-between;background:#a07040;color:white;padding:8px 10px;border-radius:6px;margin-top:6px;">
+              <span style="font-weight:700;">1인 최종 청구금액</span><span style="font-weight:800;font-size:15px;">${fmt(r.finPer)}</span>
+            </div>
+            <div class="res-row" style="margin-top:4px;border-bottom:none;">
+              <span style="color:#4a3828;">시간당 청구 단가 (÷${r.hoursRegular}h)</span>
+              <span style="font-weight:700;color:#4d7a5a;">${fmt(r.hBill)}/h</span>
+            </div>
+            <div class="res-row" style="font-weight:700;border-bottom:none;">
+              <span>${r.headcount}명 소계</span>
+              <span style="color:#4d7a5a;font-size:15px;">${fmt(r.sub)}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ================================================================
+// RENDER: COMMON DETAIL
+// ================================================================
+function renderCommon(welfare, fixed, fxPer, totHead) {
+  $('wf_det').innerHTML = welfare.details.length
+    ? welfare.details.map(w => `<div class="res-row"><span style="color:#4a3828;">${w.lbl}</span><span style="font-weight:600;">${fmt(w.amt)}</span></div>`).join('')
+    : '<div style="font-size:12px;color:#a09080;padding:4px 8px;">선택된 항목 없음</div>';
+  $('r_wf_sub').textContent = fmt(welfare.total);
+
+  $('fx_det').innerHTML = fixed.details.length
+    ? fixed.details.map(f => `<div class="res-row"><span style="color:#4a3828;">${esc(f.name)} <span style="font-size:11px;color:#a09080;">(합계 ${fmtn(f.amt)}원 ÷ ${totHead}명)</span></span><span style="font-weight:600;">${fmt(totHead > 0 ? f.amt / totHead : 0)}</span></div>`).join('')
+    : '<div style="font-size:12px;color:#a09080;padding:4px 8px;">입력된 항목 없음</div>';
+  $('r_fx_sub').textContent = fmt(fxPer);
+}
+
+// ================================================================
+// CHARTS
+// ================================================================
+function renderCharts(agg, results) {
+  const pLbls = AGG_LBL.map(x => x[1]);
+  const pVals = AGG_LBL.map(x => Math.round(agg[x[0]]));
+  const pCols = AGG_LBL.map(x => x[2]);
+
+  // 범례는 차트 라이브러리 없이도 렌더
+  const tot0 = pVals.reduce((a,b)=>a+b,0);
+  $('legendTbl').innerHTML = pLbls.map((l,i) => {
+    const p = tot0 > 0 ? (pVals[i]/tot0*100).toFixed(1) : 0;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;"><div style="width:10px;height:10px;border-radius:50%;background:${pCols[i]};flex-shrink:0;"></div><span style="flex:1;color:#4a3828;">${l}</span><span style="color:#7a6a58;width:30px;text-align:right;">${p}%</span><span style="font-weight:600;width:65px;text-align:right;">${fmtn(pVals[i])}</span></div>`;
+  }).join('');
+
+  // CDN 차단/오프라인 환경 가드 — 차트만 생략하고 나머지 화면은 정상 동작
+  if (typeof Chart === 'undefined') return;
+
+  if (pieChart) { pieChart.data.datasets[0].data = pVals; pieChart.update(); }
+  else {
+    pieChart = new Chart($('pieChart').getContext('2d'), {
+      type: 'doughnut',
+      data: { labels: pLbls, datasets: [{ data: pVals, backgroundColor: pCols, borderWidth:2, borderColor:'#fff' }] },
+      options: { responsive:true, cutout:'58%',
+        plugins: { legend:{ display:false },
+          tooltip:{ callbacks:{ label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${fmtn(ctx.raw)}원 (${t>0?(ctx.raw/t*100).toFixed(1):0}%)`; } } }
+        }
+      }
+    });
+  }
+
+  const bLbls = results.map(r => r.name || `업무${r.id}`);
+  const bVals = results.map(r => Math.round(r.sub));
+  const bCols = results.map(r => WK_COLORS[(r.id-1) % WK_COLORS.length]);
+
+  if (barChart) { barChart.data.labels=bLbls; barChart.data.datasets[0].data=bVals; barChart.data.datasets[0].backgroundColor=bCols; barChart.update(); }
+  else {
+    barChart = new Chart($('barChart').getContext('2d'), {
+      type: 'bar',
+      data: { labels: bLbls, datasets: [{ label:'월 청구금액', data: bVals, backgroundColor: bCols, borderRadius:5 }] },
+      options: { responsive:true, plugins:{ legend:{ display:false } },
+        scales: { y:{ ticks:{ callback: v => fmtn(v/10000)+'만', font:{size:10} } }, x:{ ticks:{ font:{size:11} } } }
+      }
+    });
+  }
+}
+
+// ================================================================
+// VENDOR COMPARE — 업체 산정안 비교 (탭 ②)
+// ================================================================
+const CMP_COLS = '1fr 106px 104px 100px 62px 44px'; // 상세 입력표 6열
+
+const cmpMode      = id => $(`cmpRow_${id}`)?.dataset.mode || 'simple';
+const vendorSupply = id => VENDOR_SUPPLY.reduce((s, k) => s + gv(`v_${k}_${id}`), 0);
+const vendorUnit   = (id, mode) => (mode === 'detail' ? vendorSupply(id) : gv(`v_unit_${id}`));
+
+// ── 판정 ────────────────────────────────────────────────
+function levelOf(diff, base) {
+  if (base <= 0) return diff > 0 ? 'over' : 'eq';
+  const rt = diff / base;
+  if (rt >=  CMP_TH.over) return 'over';
+  if (rt >=  CMP_TH.warn) return 'warn';
+  if (rt <= -CMP_TH.warn) return 'under';
+  return 'eq';
+}
+function diffOf(mine, ven, p) {
+  const d = ven - mine;
+  return { [p+'Diff']: d, [p+'Ratio']: mine > 0 ? d / mine : null, [p+'Level']: levelOf(d, mine) };
+}
+function mkDiff(key, lbl, mine, ven) {
+  const known = !isNaN(ven), v = known ? ven : 0;
+  return { key, lbl, mine, vendor: v, known, diff: v - mine,
+           ratio: mine > 0 ? (v - mine) / mine : null,
+           isNew: mine <= 0 && v > 0,
+           level: known ? levelOf(v - mine, mine) : 'eq' };
+}
+
+// ── 계산 ────────────────────────────────────────────────
+function compareAll(base) {
+  const vatOn = gc('cmpVatOn'), vatRate = gv('cmpVatRate') / 100;
+
+  const rows = base.results.map(r => {
+    const id = r.id, mode = cmpMode(id);
+    const vHead = Math.max(0, Math.round(gv(`v_head_${id}`)));
+
+    const mineUnit = r.finPer + (vatOn ? r.finPer * vatRate : 0);
+    const vSupply  = vendorUnit(id, mode);
+    const vUnit    = vSupply + (vatOn ? gv(`v_vat_${id}`) : 0);
+    const mineTot  = mineUnit * r.headcount;
+    const vTot     = vUnit * vHead;
+
+    const items = CMP_ITEMS.map(it => mkDiff(it.key, it.lbl, it.mine(r),
+      mode === 'detail' ? it.vk.reduce((s, k) => s + gv(`v_${k}_${id}`), 0) : NaN));
+    if (vatOn) items.push(mkDiff('vat', '부가세', r.finPer * vatRate,
+      mode === 'detail' ? gv(`v_vat_${id}`) : NaN));
+
+    return {
+      id, name: r.name || `업무 ${id}`, shiftLbl: SHIFT_DEF[r.shiftType]?.label || '',
+      mode, mineHead: r.headcount, vHead, headDiff: vHead - r.headcount,
+      mineSupply: r.finPer, vSupply, mineMgmt: r.mgmt,
+      mineVat: r.finPer * vatRate,
+      mineUnit, vUnit, ...diffOf(mineUnit, vUnit, 'unit'),
+      mineTot, vTot,   ...diffOf(mineTot,  vTot,  'tot'),
+      // 월 차이 = 단가 효과 + 인원 효과 (항등식)
+      priceEffect: (vUnit - mineUnit) * r.headcount,
+      headEffect : (vHead - r.headcount) * vUnit,
+      filled: vUnit > 0,
+      items,
+      topOver: items.filter(i => i.known && i.level === 'over' && i.diff > 0)
+                    .sort((a, b) => b.diff - a.diff).slice(0, 2),
+    };
+  });
+
+  const live = rows.filter(x => x.filled);            // 값이 입력된 업무만 합계 반영
+  const det  = live.filter(x => x.mode === 'detail'); // 항목별 집계 대상
+  const sum  = f => live.reduce((s, x) => s + f(x), 0);
+  const mineMonthly = sum(x => x.mineTot), vMonthly = sum(x => x.vTot);
+
+  const keys = CMP_ITEMS.concat(vatOn ? [{ key:'vat', lbl:'부가세' }] : []);
+  const items = keys.map((it, i) => mkDiff(it.key, it.lbl,
+    det.reduce((s, x) => s + x.items[i].mine   * x.mineHead, 0),
+    det.reduce((s, x) => s + x.items[i].vendor * x.vHead,    0)));
+
+  return {
+    vendorName: $('cmpVendorName')?.value || '', vatOn, vatRate, rows,
+    has: live.length > 0,
+    tot: {
+      mineHead: sum(x => x.mineHead), vHead: sum(x => x.vHead),
+      mineMonthly, vMonthly, ...diffOf(mineMonthly, vMonthly, 'monthly'),
+      annualDiff : (vMonthly - mineMonthly) * 12,
+      priceEffect: sum(x => x.priceEffect),
+      headEffect : sum(x => x.headEffect),
+      items, coverage: { detail: det.length, live: live.length, of: rows.length },
+    },
+  };
+}
+
+// ── 행 마크업 (신규 생성 시 1회만) ───────────────────────
+function buildCmpRowHTML(r) {
+  const id = r.id, col = WK_COLORS[(id - 1) % WK_COLORS.length];
+  const G = `display:grid;grid-template-columns:${CMP_COLS};gap:6px;align-items:center;padding:3px 7px;font-size:11.5px;`;
+  const dash = '<span style="text-align:right;color:#c0b0a0;">—</span>';
+
+  const inputRows = CMP_INPUT_ROWS.map((row, i) => `
+    <div style="${G}${i%2?'background:#faf5ee;':''}">
+      <span style="color:#4a3828;">${row.lbl}</span>
+      ${row.cmp ? `<span id="cm_${row.k}_${id}" style="text-align:right;color:#7a6a58;">-</span>` : dash}
+      <input type="number" id="v_${row.k}_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+      ${row.cmp ? `<span id="ci_${row.k}_${id}" class="d-cell d-eq">-</span>
+                   <span id="cr_${row.k}_${id}" class="d-cell d-eq">-</span>
+                   <span id="cv_${row.k}_${id}" class="d-cell d-eq" style="text-align:center;">-</span>`
+                : `${dash}${dash}${dash}`}
+    </div>`).join('');
+
+  const subRow = (lbl, mineId, venId, key, strong, extra) => `
+    <div style="${G}${strong ? 'font-weight:700;background:#f5ede0;border-top:1px solid #ddd0bc;' : 'border-top:1px dashed #e4d8c4;'}">
+      <span style="color:${strong ? '#a07040' : '#6a5a48'};">${lbl}</span>
+      <span id="${mineId}" style="text-align:right;color:#4a3828;">-</span>
+      ${extra || `<span id="${venId}" style="text-align:right;color:#4a3828;">-</span>`}
+      <span id="ci_${key}_${id}" class="d-cell d-eq">-</span>
+      <span id="cr_${key}_${id}" class="d-cell d-eq">-</span>
+      <span id="cv_${key}_${id}" class="d-cell d-eq" style="text-align:center;">-</span>
+    </div>`;
+
+  return `
+  <div id="cmpRow_${id}" class="cmp-row" data-mode="simple" style="border-left:3px solid transparent;">
+    <div class="cmp-grid" style="padding:7px 8px;">
+      <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+        <div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;"></div>
+        <span id="cmpName_${id}" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span id="cmpShift_${id}" style="font-size:10.5px;color:#a09080;white-space:nowrap;"></span>
+      </div>
+      <span id="cmpMyHead_${id}" style="text-align:center;color:#7a6a58;"></span>
+      <div style="display:flex;align-items:center;gap:2px;">
+        <input type="number" id="v_head_${id}" value="${r.headcount}" min="0" oninput="onCmp()" class="inp-c" style="text-align:center;">
+        <button onclick="syncCmpHead(${id})" id="vHeadSync_${id}" class="rstbtn no-print" style="display:none;" title="내 산정 인원으로 맞추기">↺</button>
+      </div>
+      <span id="cmpMyUnit_${id}" style="text-align:right;"></span>
+      <input type="number" id="v_unit_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+      <span id="cmpDU_${id}" class="d-cell d-eq">-</span>
+      <span id="cmpMyTot_${id}" style="text-align:right;color:#7a6a58;"></span>
+      <span id="cmpVTot_${id}" style="text-align:right;color:#4a3828;font-weight:600;"></span>
+      <span id="cmpDT_${id}" class="d-cell d-eq">-</span>
+      <span id="cmpRt_${id}" class="d-cell d-eq">-</span>
+      <button onclick="toggleCmpMode(${id})" id="vDetBtn_${id}" class="no-print"
+        style="font-size:10.5px;color:#9b7050;background:none;border:none;cursor:pointer;padding:0;white-space:nowrap;">▼ 상세</button>
+    </div>
+    <div id="cmpBadge_${id}" style="display:none;padding:0 8px 6px 24px;"></div>
+    <div id="vDet_${id}" style="display:none;padding:8px 10px 10px 24px;background:#fdfaf5;border-top:1px dashed #ddd0bc;">
+      <div style="${G}font-size:10.5px;font-weight:700;color:#7a6a58;background:#f0e8d8;border-radius:4px;padding:4px 7px;">
+        <span>항목 (1인 월)</span><span style="text-align:right;">내 산정</span>
+        <span style="text-align:center;">업체 입력</span><span style="text-align:right;">차이</span>
+        <span style="text-align:right;">차이율</span><span style="text-align:center;">판정</span>
+      </div>
+      ${inputRows}
+      ${subRow('└ 관리비 + 이윤 계', `cm_mgmt_${id}`, `vMg_${id}`, 'mgmt', true)}
+      ${subRow('공급가액 소계', `cmSup_${id}`, `vSup_${id}`, 'sup', true)}
+      ${subRow('부가세', `cm_vat_${id}`, null, 'vat', false, `
+        <div style="display:flex;align-items:center;gap:2px;">
+          <input type="number" id="v_vat_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+          <button onclick="autoVat(${id})" class="rstbtn no-print" title="공급가액 × 세율로 자동 계산">↺</button>
+        </div>`)}
+      ${subRow('합계 (부가세 포함)', `cmGross_${id}`, `vGross_${id}`, 'gross', true)}
+      <div style="font-size:10px;color:#a09080;margin-top:5px;line-height:1.5;">
+        ※ 내 산정은 '관리비' 하나로 계상되므로 업체의 <b>일반관리비 + 이윤 합계</b>와 대조합니다.<br>
+        ※ 부가세는 상단 '부가세 포함 비교'를 켰을 때만 비교에 반영됩니다.
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── 구조 조정 (행 생성/삭제 + 라벨 갱신) ─────────────────
+function reconcileCmpRows(results) {
+  const body = $('cmpBody');
+  const want = new Set(results.map(r => String(r.id)));
+  [...body.children].forEach(el => { if (!want.has(el.id.slice(7))) el.remove(); });
+  for (const r of results) {
+    if (!$(`cmpRow_${r.id}`)) body.insertAdjacentHTML('beforeend', buildCmpRowHTML(r));
+    setTxt(`cmpName_${r.id}`,   r.name || `업무 ${r.id}`);
+    setTxt(`cmpShift_${r.id}`,  SHIFT_DEF[r.shiftType]?.label || '');
+    setTxt(`cmpMyHead_${r.id}`, `${r.headcount}명`);
+  }
+  $('cmpEmpty').style.display = results.length ? 'none' : 'block';
+  body.style.display          = results.length ? 'block' : 'none';
+}
+
+// ── 값 페인트 (읽기전용 셀만) ────────────────────────────
+function paintDiff(id, d) {
+  setTxt(id, d.isNew ? '신규' : sgn(d.diff));
+  setCls(id, 'd-cell d-' + d.level);
+}
+
+function paintCmpRows(cmp) {
+  for (const x of cmp.rows) {
+    const id = x.id;
+    setTxt(`cmpMyUnit_${id}`, fmt(x.mineUnit));
+    setTxt(`cmpMyTot_${id}`,  fmt(x.mineTot));
+    setTxt(`cmpVTot_${id}`,   x.filled ? fmt(x.vTot) : '-');
+
+    if (x.filled) {
+      paintDiff(`cmpDU_${id}`, { diff:x.unitDiff, level:x.unitLevel, isNew:false });
+      paintDiff(`cmpDT_${id}`, { diff:x.totDiff,  level:x.totLevel,  isNew:false });
+      setTxt(`cmpRt_${id}`, pctn(x.totRatio));
+      setCls(`cmpRt_${id}`, 'd-cell d-' + x.totLevel);
+      $(`cmpRow_${id}`).style.borderLeftColor =
+        { over:'#c86858', warn:'#c8a060', under:'#5a8a6a', eq:'transparent' }[x.unitLevel];
+    } else {
+      for (const c of [`cmpDU_${id}`, `cmpDT_${id}`, `cmpRt_${id}`]) { setTxt(c, '-'); setCls(c, 'd-cell d-eq'); }
+      $(`cmpRow_${id}`).style.borderLeftColor = 'transparent';
+    }
+
+    // 인원 불일치 안내
+    const sync = $(`vHeadSync_${id}`);
+    if (sync) sync.style.display = x.headDiff !== 0 ? 'inline-block' : 'none';
+
+    // 과다 항목 칩 (접힌 상태에서도 보이게)
+    const badge = $(`cmpBadge_${id}`);
+    if (x.topOver.length) {
+      const html = x.topOver.map(i =>
+        `<span class="d-cell d-over" style="padding:1px 7px;margin-right:4px;font-size:10.5px;">▲ ${esc(i.lbl)} ${i.isNew ? '신규' : pctn(i.ratio)}</span>`).join('');
+      if (badge.innerHTML !== html) badge.innerHTML = html;
+      badge.style.display = 'block';
+    } else if (badge.style.display !== 'none') {
+      badge.style.display = 'none';
+    }
+
+    if (x.mode !== 'detail') continue;
+
+    // 상세 입력표
+    for (const it of x.items) {
+      setTxt(`cm_${it.key}_${id}`, fmt(it.mine));
+      const cell = $(`ci_${it.key}_${id}`);
+      if (!cell) continue;
+      paintDiff(`ci_${it.key}_${id}`, it);
+      setTxt(`cr_${it.key}_${id}`, pctn(it.ratio));  setCls(`cr_${it.key}_${id}`, 'd-cell d-' + it.level);
+      setTxt(`cv_${it.key}_${id}`, CMP_LBL[it.level]); setCls(`cv_${it.key}_${id}`, 'd-cell d-' + it.level);
+    }
+    setTxt(`vMg_${id}`, fmt(gv(`v_mgmt_${id}`) + gv(`v_profit_${id}`)));
+
+    // 공급가액 소계 / 합계
+    const supD = mkDiff('sup', '공급가액', x.mineSupply, x.vSupply);
+    setTxt(`cmSup_${id}`, fmt(x.mineSupply)); setTxt(`vSup_${id}`, fmt(x.vSupply));
+    paintDiff(`ci_sup_${id}`, supD);
+    setTxt(`cr_sup_${id}`, pctn(supD.ratio)); setCls(`cr_sup_${id}`, 'd-cell d-' + supD.level);
+    setTxt(`cv_sup_${id}`, CMP_LBL[supD.level]); setCls(`cv_sup_${id}`, 'd-cell d-' + supD.level);
+
+    // 부가세 · 합계 — 양쪽 모두 부가세를 포함할 때만 비교 (한쪽만 포함하면 항상 10% 차이로 왜곡)
+    if (cmp.vatOn) {
+      const mineGross = x.mineSupply + x.mineVat;
+      const vGross    = x.vSupply    + gv(`v_vat_${id}`);
+      const g = mkDiff('gross', '합계', mineGross, vGross);
+      setTxt(`cmGross_${id}`, fmt(mineGross)); setTxt(`vGross_${id}`, fmt(vGross));
+      paintDiff(`ci_gross_${id}`, g);
+      setTxt(`cr_gross_${id}`, pctn(g.ratio));    setCls(`cr_gross_${id}`, 'd-cell d-' + g.level);
+      setTxt(`cv_gross_${id}`, CMP_LBL[g.level]); setCls(`cv_gross_${id}`, 'd-cell d-' + g.level);
+    } else {
+      setTxt(`cm_vat_${id}`,   '— (비교 제외)');
+      setTxt(`cmGross_${id}`,  '— (비교 제외)');
+      setTxt(`vGross_${id}`,   '—');
+      for (const c of [`ci_vat_${id}`, `cr_vat_${id}`, `cv_vat_${id}`,
+                       `ci_gross_${id}`, `cr_gross_${id}`, `cv_gross_${id}`]) {
+        setTxt(c, '—'); setCls(c, 'd-cell d-eq');
+      }
+    }
+
+    // 상세 모드에서는 요약행의 업체 단가가 상세 합계를 따라간다 (readOnly라 입력 충돌 없음)
+    const unitEl = $(`v_unit_${id}`), v = String(Math.round(x.vSupply));
+    if (unitEl && unitEl.value !== v) unitEl.value = v;
+  }
+}
+
+// ── 요약 카드 + 탭 뱃지 ─────────────────────────────────
+function renderCmpSummary(cmp) {
+  const t = cmp.tot, over = t.monthlyDiff > 0;
+  const COL = { over:'#c86858', under:'#4d7a5a', flat:'#a09080' };
+  const c   = !cmp.has ? COL.flat : Math.abs(t.monthlyDiff) < 1 ? COL.flat : over ? COL.over : COL.under;
+
+  $('cmpHint').style.display = cmp.has ? 'none' : 'block';
+  setTxt('cmpBasisTxt', `· ${cmp.vatOn ? '총액 기준 (부가세 포함)' : '공급가액 기준 (부가세 제외)'}`
+    + (cmp.has && t.coverage.live < t.coverage.of ? ` · 비교 대상 ${t.coverage.live}/${t.coverage.of}개 업무` : ''));
+
+  const set = (id, txt, sub, color) => {
+    setTxt(id, txt); $(id).style.color = color;
+    if (sub !== null) setTxt(id + '_s', sub);
+  };
+  if (!cmp.has) {
+    set('c_monthly', '-', '업체 − 내 산정', COL.flat);
+    set('c_annual',  '-', '×12개월',        COL.flat);
+    set('c_ratio',   '-', '내 산정 대비',   COL.flat);
+    setTxt('c_eff_p', '-'); setTxt('c_eff_h', '-');
+    for (const k of ['c_myHead','c_vHead','c_myTot','c_vTot','c_totDiff','c_totRt']) setTxt(k, '-');
+    setCls('c_totDiff', 'd-cell d-eq'); setCls('c_totRt', 'd-cell d-eq');
+    $('tabBadge_cmp').style.display = 'none';
+    return;
+  }
+  set('c_monthly', sgn(t.monthlyDiff) + '원', over ? '업체가 더 높음' : '업체가 더 낮음', c);
+  set('c_annual',  sgn(t.annualDiff)  + '원', over ? '연간 추가 부담' : '연간 절감액',    c);
+  set('c_ratio',   pctn(t.monthlyRatio), `내 산정 ${fmt(t.mineMonthly)} 대비`,           c);
+  setTxt('c_eff_p', `단가 요인 ${sgn(t.priceEffect)}원`);
+  setTxt('c_eff_h', `인원 요인 ${sgn(t.headEffect)}원`);
+
+  setTxt('c_myHead', `${t.mineHead}명`);
+  setTxt('c_vHead',  `${t.vHead}명`);
+  setTxt('c_myTot',  fmt(t.mineMonthly));
+  setTxt('c_vTot',   fmt(t.vMonthly));
+  paintDiff('c_totDiff', { diff:t.monthlyDiff, level:t.monthlyLevel, isNew:false });
+  setTxt('c_totRt', pctn(t.monthlyRatio)); setCls('c_totRt', 'd-cell d-' + t.monthlyLevel);
+
+  const b = $('tabBadge_cmp');
+  b.style.display = 'inline-block';
+  setTxt('tabBadge_cmp', sgn(t.monthlyDiff));
+  b.style.color = c;
+}
+
+// ── 항목별 차이표 ───────────────────────────────────────
+function renderCmpItems(cmp) {
+  const { items, coverage } = cmp.tot;
+  setTxt('cmpItemNote', coverage.detail
+    ? `상세 입력 ${coverage.detail}/${coverage.live}개 업무 기준 · 인원 반영 월 금액`
+    : '');
+  if (!coverage.detail) {
+    $('cmpItemTbl').innerHTML = '<div style="padding:22px 8px;text-align:center;color:#a09080;font-size:12.5px;line-height:1.6;">업무를 <b>▼ 상세</b>로 펼쳐<br>항목별 금액을 입력하면 표시됩니다.</div>';
+    return;
+  }
+  const G = 'display:grid;grid-template-columns:1fr 104px 104px 100px 62px 44px;gap:6px;align-items:center;padding:5px 8px;font-size:11.5px;';
+  const sumRow = items.reduce((a, i) => ({ mine:a.mine + i.mine, ven:a.ven + i.vendor }), { mine:0, ven:0 });
+  const tot = mkDiff('tot', '합계', sumRow.mine, sumRow.ven);
+  $('cmpItemTbl').innerHTML =
+    `<div style="${G}font-size:10.5px;font-weight:700;color:#7a6a58;background:#f0e8d8;border-radius:5px 5px 0 0;">
+       <span>항목</span><span style="text-align:right;">내 산정</span><span style="text-align:right;">업체</span>
+       <span style="text-align:right;">차이</span><span style="text-align:right;">차이율</span><span style="text-align:center;">판정</span>
+     </div>` +
+    items.map((i, n) => `
+      <div style="${G}border-bottom:1px solid #f0e8d8;${n%2?'background:#faf5ee;':''}">
+        <span style="color:#4a3828;">${esc(i.lbl)}</span>
+        <span style="text-align:right;color:#7a6a58;">${fmtn(i.mine)}</span>
+        <span style="text-align:right;font-weight:600;">${fmtn(i.vendor)}</span>
+        <span class="d-cell d-${i.level}">${i.isNew ? '신규' : sgn(i.diff)}</span>
+        <span class="d-cell d-${i.level}">${pctn(i.ratio)}</span>
+        <span class="d-cell d-${i.level}" style="text-align:center;">${CMP_LBL[i.level]}</span>
+      </div>`).join('') +
+    `<div style="${G}font-weight:700;background:#f5ede0;border:1px solid #c8a878;border-radius:0 0 5px 5px;">
+       <span style="color:#a07040;">합계</span>
+       <span style="text-align:right;">${fmtn(tot.mine)}</span>
+       <span style="text-align:right;">${fmtn(tot.vendor)}</span>
+       <span class="d-cell d-${tot.level}">${sgn(tot.diff)}</span>
+       <span class="d-cell d-${tot.level}">${pctn(tot.ratio)}</span>
+       <span class="d-cell d-${tot.level}" style="text-align:center;">${CMP_LBL[tot.level]}</span>
+     </div>`;
+}
+
+// ── 차트 (싱글톤) ───────────────────────────────────────
+function renderCmpChart(cmp) {
+  const on = cmp.tot.coverage.detail > 0;
+  $('cmpChart').style.display      = on ? 'block' : 'none';
+  $('cmpChartEmpty').style.display = on ? 'none'  : 'block';
+  if (!on || typeof Chart === 'undefined') return;
+  // 숨김 상태에서 생성하면 캔버스가 0×0으로 굳는다 — 생성만 막고 갱신은 허용
+  if (!cmpChart && $('tab_cmp').style.display === 'none') return;
+
+  const lbls = cmp.tot.items.map(i => i.lbl);
+  const vals = cmp.tot.items.map(i => Math.round(i.diff));
+  const cols = cmp.tot.items.map(i => i.diff > 0 ? '#c86858' : '#5a9a72');
+
+  if (cmpChart) {
+    cmpChart.data.labels = lbls;
+    cmpChart.data.datasets[0].data = vals;
+    cmpChart.data.datasets[0].backgroundColor = cols;
+    cmpChart.update();
+    return;
+  }
+  cmpChart = new Chart($('cmpChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: lbls, datasets: [{ data: vals, backgroundColor: cols, borderRadius:4 }] },
+    options: { indexAxis:'y', responsive:true,
+      plugins: { legend:{ display:false },
+        tooltip:{ callbacks:{ label: c => (c.raw > 0 ? '업체 과다 +' : '절감 ') + fmtn(c.raw) + '원/월' } } },
+      scales: { x:{ ticks:{ callback: v => fmtn(v/10000)+'만', font:{size:10} }, grid:{ color:'#f0e8d8' } },
+                y:{ ticks:{ font:{size:11} }, grid:{ display:false } } }
+    }
+  });
+}
+
+// ── 진입점 ──────────────────────────────────────────────
+function renderCompare(base) {
+  if (!$('cmpBody')) return;
+  reconcileCmpRows(base.results);   // ① 구조
+  const cmp = compareAll(base);
+  paintCmpRows(cmp);                // ② 값
+  renderCmpSummary(cmp);            // ③ 요약
+  renderCmpItems(cmp);              // ④ 항목표
+  renderCmpChart(cmp);              // ⑤ 차트
+}
+
+function onCmp() { renderCompare(computeAll()); }
+
+// ── 조작 ────────────────────────────────────────────────
+function toggleCmpMode(id, force) {
+  const row = $(`cmpRow_${id}`);
+  if (!row) return;
+  const to = force || (row.dataset.mode === 'detail' ? 'simple' : 'detail');
+  if (to === row.dataset.mode) return;
+
+  if (to === 'detail') {
+    // 간편 → 상세: 상세가 비어 있으면 간편값을 기본급으로 시딩 (0으로 급락 방지)
+    if (vendorSupply(id) === 0 && gv(`v_unit_${id}`) > 0) $(`v_base_${id}`).value = gv(`v_unit_${id}`);
+  } else {
+    // 상세 → 간편: 상세 합계를 간편 칸에 확정
+    $(`v_unit_${id}`).value = Math.round(vendorSupply(id));
+  }
+  row.dataset.mode = to;
+  $(`vDet_${id}`).style.display = to === 'detail' ? 'block' : 'none';
+  $(`v_unit_${id}`).readOnly    = (to === 'detail');
+  $(`vDetBtn_${id}`).textContent = to === 'detail' ? '▲ 간편' : '▼ 상세';
+  onCmp();
+}
+
+function setAllCmpMode(mode) {
+  document.querySelectorAll('[id^="cmpRow_"]').forEach(el => toggleCmpMode(+el.id.slice(7), mode));
+}
+
+function syncCmpHead(id) { $(`v_head_${id}`).value = gv(`wHead_${id}`); onCmp(); }
+
+function autoVat(id) { $(`v_vat_${id}`).value = Math.round(vendorSupply(id) * gv('cmpVatRate') / 100); onCmp(); }
+
+function clearVendor(ask) {
+  if (ask && !confirm('입력한 업체 산정안 값을 모두 지우시겠습니까?')) return;
+  $('cmpVendorName').value = '';
+  $('cmpVatOn').checked    = false;
+  $('cmpVatRate').value    = VAT_DEF;
+  $('cmpBody').innerHTML   = '';   // 행 전체 제거 → reconcile이 기본값으로 재생성
+  calculate();
+}
+
+// ================================================================
+// RESET / COPY
+// ================================================================
+function resetAll() {
+  if (!confirm('모든 입력값을 초기화하시겠습니까?')) return;
+  $('workList').innerHTML = '';
+  $('fixedRows').innerHTML = '';
+  wkCnt = 0; fxCnt = 0;
+  clearVendor();
+  for (const [k, v] of Object.entries(DEFAULT_RATES)) { if ($(k)) $(k).value = v; }
+  for (const w of WF_ITEMS) { if ($(w.id)) $(w.id).checked=(w.id==='wf_meal'); }
+  $('wf_meal_v').value=200000; $('wf_trans_v').value=100000;
+  $('wf_uni_v').value=50000; $('wf_bonus_v').value=83333;
+  $('wf_health_v').value=30000; $('wf_condo_v').value=20000;
+  addWork({ name:'경비', shiftType:'alternate', hourlyRate:MIN_WAGE, headcount:3, accidentRate:DEFAULT_RATES.rAcc, hoursRegular:209, hoursOvertime:120, hoursNight:60, weekendDays:0 });
+}
+
+// 클립보드 — 비보안 컨텍스트(사내망 http 등) 폴백 포함
+function copyText(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy') ? resolve() : reject(new Error('execCommand 실패')); }
+    catch (e) { reject(e); }
+    document.body.removeChild(ta);
+  });
+}
+
+function copyResult() {
+  const base = computeAll();
+  const { results, totHead, grandTot } = base;
+
+  const lines = [
+    '=== 협력업체 요율산정 결과 ===',
+    `산정일: ${new Date().toLocaleDateString('ko-KR')} (${BASE_YEAR}년 법정 기준)`,
+    '',
+    '[적용 비율]',
+    `퇴직충당금 ${gv('rRet')}% | 국민연금 ${gv('rNP')}% | 건강보험 ${gv('rHI')}% | 장기요양 ${gv('rLT')}% | 실업급여 ${gv('rEI1')}% | 고용안정·직업능력개발 ${gv('rEI2')}% | 관리비율 ${gv('mgmtRate')}%`,
+    '',
+    '[업무별 결과]',
+    ...results.map(r => `${r.name} | ${SHIFT_DEF[r.shiftType]?.label||''} | ${r.headcount}명 | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
+    '',
+    `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
+  ];
+
+  const cmp = compareAll(base);
+  if (cmp.has) {
+    const t = cmp.tot;
+    lines.push('', `=== 업체 산정안 비교 (vs ${cmp.vendorName || '업체'}) ===`,
+      `기준: ${cmp.vatOn ? `총액 (부가세 ${gv('cmpVatRate')}% 포함)` : '공급가액 (부가세 제외)'}`,
+      ...cmp.rows.filter(x => x.filled).map(x =>
+        `${x.name} | 내 ${fmt(x.mineUnit)} × ${x.mineHead}명 → ${fmt(x.mineTot)}`
+        + ` | 업체 ${fmt(x.vUnit)} × ${x.vHead}명 → ${fmt(x.vTot)}`
+        + ` | 차이 ${sgn(x.totDiff)}원 (${pctn(x.totRatio)})`),
+      `[합계] 내 ${fmt(t.mineMonthly)} / 업체 ${fmt(t.vMonthly)} → 월 ${sgn(t.monthlyDiff)}원 (${pctn(t.monthlyRatio)}) · 연 ${sgn(t.annualDiff)}원`,
+      `[요인] 단가 ${sgn(t.priceEffect)}원 · 인원 ${sgn(t.headEffect)}원`);
+    if (t.coverage.detail) {
+      lines.push('[항목별 차이 — 큰 순]',
+        ...t.items.filter(i => Math.abs(i.diff) >= 1)
+                  .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 5)
+                  .map(i => `  ${i.lbl}: ${sgn(i.diff)}원 (${pctn(i.ratio)}) ${CMP_LBL[i.level]}`));
+    }
+  }
+
+  copyText(lines.join('\n'))
+    .then(() => alert('결과가 클립보드에 복사되었습니다.'))
+    .catch(() => alert('복사 실패. 브라우저 권한을 확인해주세요.'));
+}
+
+// ================================================================
+// EXCEL EXPORT
+// ================================================================
+// ── 엑셀 색 테마 ──────────────────────────────────────────
+// 섹션마다 색조를 달리하지 않고 한 계열을 진하기만 달리해 쓴다.
+// 색은 '차이 표시'에만 의미를 싣고, 나머지는 무채색으로 둔다.
+//   band[0] = 주 섹션(근무조건·청구단가 산출·요약의 각 블록)
+//   band[1..4] = 비용 분류 ①인건비 ②법정부담금 ③복리후생 ④고정비
+//   flat:true = 배경 대신 밑줄로 구조를 잡는 방식
+const EXCEL_THEMES = {
+  charcoal: { label:'차콜 그레이',
+    hdr:'2F3336', hdr2:'6B7378',
+    band:['DCE0E3','E4E7E9','EAEDEF','F0F2F3','F5F6F7'],
+    bg:'EFF1F2', panel:'FFFFFF', zebra:'F7F8F9', line:'D8DCDF', rule:'EDEFF1',
+    tx:'2F3336', tx2:'5C6469', tx3:'8B9297', sub:'EDEFF1', grand:'E4E7E9', edge:'B9C0C4',
+    diff:{ over:['A33A2A','F7ECEA'], warn:['8A6A20','F6F1E3'], under:['2E6B4F','E9F1EC'], eq:['5C6469','FFFFFF'] } },
+
+  navy: { label:'감청 네이비',
+    hdr:'23395B', hdr2:'5A7191',
+    band:['CDD8E5','D6DEE9','DFE6EE','E8EDF3','F1F4F7'],
+    bg:'E8EDF3', panel:'FFFFFF', zebra:'F6F8FA', line:'CBD5E0', rule:'EDF1F5',
+    tx:'1F2D40', tx2:'4A5A6E', tx3:'8595A6', sub:'EDF1F5', grand:'D6DEE9', edge:'A9B8CA',
+    diff:{ over:['9C3B2E','F7ECEA'], warn:['8A6A20','F6F1E3'], under:['2C6E52','E7F0EB'], eq:['4A5A6E','FFFFFF'] } },
+
+  kraft: { label:'먹빛 브라운',
+    hdr:'4A3F35', hdr2:'7A6A5A',
+    band:['DED5C8','E5DED3','EBE5DC','F1ECE5','F6F3EE'],
+    bg:'EFEAE2', panel:'FFFDFA', zebra:'FAF7F2', line:'DBD2C5', rule:'F0EBE3',
+    tx:'3E362D', tx2:'6B5F52', tx3:'9A8E80', sub:'F0EBE3', grand:'E5DED3', edge:'C3B7A6',
+    diff:{ over:['9A3A2C','FAEDE9'], warn:['8A6A20','F7F1E2'], under:['3D6B4A','E9F1EA'], eq:['6B5F52','FFFFFF'] } },
+
+  ink: { label:'잉크 블루 (선 위주)', flat:true,
+    hdr:'1F3352', hdr2:'1F3352',
+    band:['FFFFFF','FFFFFF','FFFFFF','FFFFFF','FFFFFF'],
+    bg:'FFFFFF', panel:'FFFFFF', zebra:'FAFBFC', line:'C9D2DE', rule:'FFFFFF',
+    tx:'1F2A3A', tx2:'46546A', tx3:'8A94A3', sub:'FFFFFF', grand:'FFFFFF', edge:'1F3352',
+    tint:'EDF1F7',   // flat 테마에서 열군을 가르는 유일한 면
+    diff:{ over:['A03A28','FBEFEC'], warn:['8A6A20','F8F3E7'], under:['26674A','EBF2EE'], eq:['46546A','FFFFFF'] } },
+};
+
+// ★ 여기 한 줄만 바꾸면 엑셀 전체 색이 바뀐다
+let EXCEL_THEME = 'ink';
+
+const FN = '맑은 고딕';   // 미지정 시 한글이 Calibri 로 폴백된다
+const font = (sz, bold, rgb) => ({ name:FN, sz, bold:!!bold, color: rgb ? { rgb } : undefined });
+const fill = rgb => ({ patternType:'solid', fgColor:{ rgb } });
+const al   = (h, wrap, ind) => ({ horizontal:h, vertical:'center', wrapText:!!wrap, indent: ind || undefined });
+
+let PAL, S, WON, NUM, NUM1, PCT, RATIO, RATE;
+
+function applyExcelTheme(key) {
+  const T = EXCEL_THEMES[key] || EXCEL_THEMES.charcoal;
+  EXCEL_THEME = key;
+  PAL = T;
+
+  const bt = { style:'thin',   color:{ rgb:T.line } };
+  const bm = { style:'medium', color:{ rgb:T.edge } };
+  const bb = { style:'medium', color:{ rgb:T.hdr  } };
+  const thin = { top:bt, bottom:bt, left:bt, right:bt };
+  const med  = { top:bm, bottom:bm, left:bm, right:bm };
+  const blue = { top:bb, bottom:bb, left:bb, right:bb };   // ★이름 유지 — 실제 색은 테마 헤더색
+
+  // flat 테마는 면 대신 선으로 구조를 잡는다
+  const bandS = i => T.flat
+    ? { font:font(11,1,T.hdr), alignment:al('left'), border:{ bottom:bb } }
+    : { font:font(11,1,T.hdr), fill:fill(T.band[i]), alignment:al('left'), border:med };
+  const hdrS = (wrap, f, g) => T.flat
+    ? { font:font(9,1,g || T.hdr), alignment:al('center', wrap), border:{ bottom:bb, top:bt } }
+    : { font:font(9,1,g || 'FFFFFF'), fill:fill(f || T.hdr2), alignment:al('center', wrap), border:thin };
+  const dif = (k, h) => ({ font:font(10, k !== 'eq', T.diff[k][0]),
+                           fill:fill(T.diff[k][1]), alignment:al(h), border:thin });
+  const grandBd = T.flat ? { top:{ style:'double', color:{ rgb:T.hdr } }, bottom:bb } : blue;
+
+  S = {
+    // 제목
+    title:    { font:font(15,1,'FFFFFF'), fill:fill(T.hdr), alignment:al('center'), border:med },
+    titleBig: { font:font(17,1,'FFFFFF'), fill:fill(T.hdr), alignment:al('center'), border:med },
+    subTitle: { font:font(10,0,T.tx2), fill:fill(T.panel), alignment:al('center'), border:{ bottom:bt } },
+    // 라벨 / 값
+    infoLbl:  { font:font(10,1,T.tx),  fill:fill(T.rule), alignment:al('left'), border:thin },
+    infoVal:  { font:font(10,0,T.tx2), fill:fill(T.rule), alignment:al('left'), border:thin },
+    // 섹션 밴드 — 한 계열의 진하기 차이로만 구분
+    secBlue:  bandS(0),   // 주 섹션
+    secWage:  bandS(1),   // ① 인건비
+    secVio:   bandS(2),   // ② 법정부담금
+    secGreen: bandS(3),   // ③ 복리후생
+    secAmber: bandS(4),   // ④ 기타 고정비
+    // 컬럼 헤더 (비교 시트는 '내 산정 / 업체' 열군을 명암으로 가른다)
+    colHdr:     hdrS(1),
+    colHdrSm:   hdrS(0),
+    colHdrMine: hdrS(1),
+    colHdrVen:  { font:font(9,1,T.hdr), fill:fill(T.tint || T.band[1]), alignment:al('center',1),
+                  border: T.flat ? { bottom:bb, top:bt } : thin },
+    // 데이터 행 (짝/홀)
+    dataTxt0: { font:font(10,0,T.tx), fill:fill(T.panel), alignment:al('left'),  border:thin },
+    dataTxt1: { font:font(10,0,T.tx), fill:fill(T.zebra), alignment:al('left'),  border:thin },
+    dataNum0: { font:font(10,0,T.tx), fill:fill(T.panel), alignment:al('right'), border:thin },
+    dataNum1: { font:font(10,0,T.tx), fill:fill(T.zebra), alignment:al('right'), border:thin },
+    // 소계 — 색이 아니라 굵기로 강조
+    subNum0:  { font:font(10,1,T.tx), fill:fill(T.sub), alignment:al('right'), border:thin },
+    subNum1:  { font:font(10,1,T.tx), fill:fill(T.sub), alignment:al('right'), border:thin },
+    // 전체 합계 행
+    totTxt:   { font:font(10,1,T.hdr), fill:fill(T.bg), alignment:al('left'),   border:blue },
+    totNum:   { font:font(10,1,T.hdr), fill:fill(T.bg), alignment:al('right'),  border:blue },
+    totEmpty: { font:font(10,0,T.tx3), fill:fill(T.bg), alignment:al('center'), border:blue },
+    // 요약 / 최종 강조
+    sumLbl:   { font:font(11,1,T.tx),      fill:fill(T.rule), alignment:al('left'),  border:thin },
+    sumVal:   { font:font(12,1,T.hdr),     fill:fill(T.rule), alignment:al('right'), border:thin },
+    grandLbl: { font:font(13,1,'FFFFFF'),  fill:fill(T.hdr),  alignment:al('left'),  border:med },
+    grandVal: { font:font(13,1,'FFFFFF'),  fill:fill(T.hdr),  alignment:al('right'), border:med },
+    // 세로표 전용 — 항목명(A열) / 단위(B열) / 가중평균 / 비중
+    itmTxt0:  { font:font(10,0,T.tx),  fill:fill(T.panel), alignment:al('left'), border:thin },
+    itmTxt1:  { font:font(10,0,T.tx),  fill:fill(T.zebra), alignment:al('left'), border:thin },
+    itmSub0:  { font:font(10,0,T.tx2), fill:fill(T.panel), alignment:al('left',0,1), border:thin },
+    itmSub1:  { font:font(10,0,T.tx2), fill:fill(T.zebra), alignment:al('left',0,1), border:thin },
+    itmBold:  { font:font(10,1,T.tx),  fill:fill(T.sub),   alignment:al('left'), border:thin },
+    itmGrand: { font:font(11,1,T.hdr), fill:fill(T.grand), alignment:al('left'), border:grandBd },
+    unit0:    { font:font(9,0,T.tx3),  fill:fill(T.panel), alignment:al('center'), border:thin },
+    unit1:    { font:font(9,0,T.tx3),  fill:fill(T.zebra), alignment:al('center'), border:thin },
+    avgNum0:  { font:font(10,0,T.tx3), fill:fill(T.panel), alignment:al('right'), border:thin },
+    avgNum1:  { font:font(10,0,T.tx3), fill:fill(T.zebra), alignment:al('right'), border:thin },
+    grandNum0:{ font:font(11,1,T.hdr), fill:fill(T.grand), alignment:al('right'), border:grandBd },
+    grandNum1:{ font:font(11,1,T.hdr), fill:fill(T.grand), alignment:al('right'), border:grandBd },
+    pctNum0:  { font:font(10,0,T.tx2), fill:fill(T.panel), alignment:al('right'), border:thin },
+    pctNum1:  { font:font(10,0,T.tx2), fill:fill(T.zebra), alignment:al('right'), border:thin },
+    // 요약 KPI 카드
+    kpiLbl:   { font:font(9,1,T.tx2),  fill:fill(T.rule),  alignment:al('center'), border:{ top:bm, left:bm, right:bm } },
+    kpiVal:   { font:font(16,1,T.hdr), fill:fill(T.panel), alignment:al('center'), border:{ bottom:bm, left:bm, right:bm } },
+    // 하단 주석
+    note:     { font:font(9,0,T.tx3), alignment:al('left',1) },
+    // 차이 판정 4단계 — 색을 쓰는 유일한 자리
+    diffOver:  dif('over','right'),  diffWarn:  dif('warn','right'),
+    diffUnder: dif('under','right'), diffEq:    dif('eq','right'),
+    diffOverC: dif('over','center'), diffWarnC: dif('warn','center'),
+    diffUnderC:dif('under','center'),diffEqC:   dif('eq','center'),
+  };
+
+  WON   = '#,##0';
+  NUM   = '#,##0';
+  NUM1  = '#,##0.0';      // 가중평균 시간·일수
+  PCT   = '0.00';         // (구) 호환용
+  RATIO = '0.0%';         // 분수 저장 → 50.9% 표시
+  RATE  = '0.####"%"';    // 4.75 → 4.75% / 0.4724 → 0.4724%
+}
+applyExcelTheme(EXCEL_THEME);
+
+// ── 시트 빌더 (AOA + 스타일 메타 축적) ─────────────────────
+function sheetCtx() {
+  const aoa = [], meta = [], merges = [], hts = {};
+  let r = 0;
+  const api = {
+    push(arr)              { aoa.push(arr || []); return r++; },
+    st(row, col, s, z)     { meta.push({ row, col, s, z }); },
+    stR(row, c1, c2, s, z) { for (let c = c1; c <= c2; c++) meta.push({ row, col:c, s, z }); },
+    mg(r1, c1, r2, c2)     { merges.push({ s:{ r:r1, c:c1 }, e:{ r:r2, c:c2 } }); },
+    h(row, hpt)            { hts[row] = { hpt }; },
+    ref(r1, c1, r2, c2)    { return XLSX.utils.encode_range({ s:{r:r1,c:c1}, e:{r:r2,c:c2} }); },
+    // 전폭 밴드 행 — push + 병합 + 스타일 + 행높이를 한 번에
+    band(label, nc, style, hpt) {
+      const row = api.push([label]);
+      api.mg(row, 0, row, nc - 1);
+      api.stR(row, 0, nc - 1, style);
+      if (hpt) api.h(row, hpt);
+      return row;
+    },
+    get rows() { return r; },
+
+    // opt = { rowH:기본 행높이, filter:'A3:E43', margins:{…} }
+    build(cols, opt = {}) {
+      // ★ t:'z' 스텁 셀은 실제 xlsx 파일에 기록되지 않는다(라이브러리 실측).
+      //   스타일·병합이 미치는 칸은 AOA 에 빈 문자열을 채워야 배경·테두리가 살아남는다.
+      const need = [];
+      for (const m of meta) need[m.row] = Math.max(need[m.row] ?? -1, m.col);
+      for (const g of merges)
+        for (let rr = g.s.r; rr <= g.e.r; rr++) need[rr] = Math.max(need[rr] ?? -1, g.e.c);
+      need.forEach((c, i) => { if (aoa[i]) while (aoa[i].length <= c) aoa[i].push(''); });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      for (const m of meta) {
+        const ref = XLSX.utils.encode_cell({ r:m.row, c:m.col });
+        if (!ws[ref]) ws[ref] = { t:'s', v:'' };
+        ws[ref].s = m.s;
+        if (m.z) ws[ref].z = m.z;
+      }
+      ws['!merges'] = merges;
+      ws['!cols']   = cols;
+      ws['!rows']   = Array.from({ length:r }, (_, i) => hts[i] || { hpt: opt.rowH ?? 17 });
+      if (opt.filter)  ws['!autofilter'] = { ref: opt.filter };
+      if (opt.margins) ws['!margins']    = opt.margins;
+      return ws;
+    },
+  };
+  return api;
+}
+
+function exportExcel() {
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+
+  const base = computeAll();
+  const cmp  = compareAll(base);
+  const wb   = XLSX.utils.book_new();
+
+  const wsSum = buildSummarySheet(base, cmp);
+  XLSX.utils.book_append_sheet(wb, wsSum, '요약');
+  XLSX.utils.book_append_sheet(wb, buildDetailSheet(base), '산정내역');
+  if (cmp.has) XLSX.utils.book_append_sheet(wb, buildCmpSheet(cmp), '산정안 비교');
+
+  // 인쇄 설정 — 틀고정을 쓸 수 없으므로 정의된 이름으로 대체한다.
+  //   Print_Area   : 요약 시트를 A4 세로 1장 범위로 고정
+  //   Print_Titles : 산정내역이 여러 장으로 넘어가도 항목명·단위 열을 매 장 반복
+  const sumEnd = XLSX.utils.decode_range(wsSum['!ref']).e.r + 1;
+  wb.Workbook = { Names: [
+    { Name:'_xlnm.Print_Area',   Sheet:0, Ref:`'요약'!$A$1:$F$${sumEnd}` },
+    { Name:'_xlnm.Print_Titles', Sheet:1, Ref:"'산정내역'!$A:$B" },
+  ]};
+
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `요율산정${cmp.has ? '_비교' : ''}_${today}.xlsx`);
+}
+
+// ── ① 요약 시트 — A4 세로 1장 (결재·보고용) ────────────────
+function buildSummarySheet(base, cmp) {
+  const { results, totHead, grandTot } = base;
+  const X = sheetCtx(), NC = 6, R = v => Math.round(v);
+  const compact = results.length > 6;              // 업무가 많으면 1장 유지를 위해 압축
+  const RH = compact ? 15 : 17;
+  const today = new Date().toLocaleDateString('ko-KR');
+  let r;
+
+  // ── 제목 ──
+  r = X.band(`협력업체 요율산정 결과 요약`, NC, S.titleBig, 36);
+  r = X.band(`산정일 ${today} · ${BASE_YEAR}년 법정 기준 · 업무 ${results.length}건 · 전체 ${totHead}명`, NC, S.subTitle, 20);
+  X.push(); X.h(X.rows - 1, 6);
+
+  // ── 핵심 지표 (KPI 카드 3장) ──
+  X.band('핵심 지표', NC, S.secBlue, 20);
+  const kpi = [
+    ['전체 인원 (명)',    totHead,           NUM],
+    ['월 청구 총액 (원)', R(grandTot),       WON],
+    ['연간 추정 (원)',    R(grandTot * 12),  WON],
+  ];
+  r = X.push(kpi.flatMap(k => [k[0], '']));
+  kpi.forEach((_, i) => { X.mg(r, i*2, r, i*2+1); X.stR(r, i*2, i*2+1, S.kpiLbl); });
+  X.h(r, 16);
+  r = X.push(kpi.flatMap(k => [k[1], '']));
+  kpi.forEach((k, i) => { X.mg(r, i*2, r, i*2+1); X.stR(r, i*2, i*2+1, S.kpiVal, k[2]); });
+  X.h(r, 30);
+  X.push(); X.h(X.rows - 1, 6);
+
+  // ── 업무별 요약 ──
+  X.band('업무별 요약', NC, S.secBlue, 20);
+  r = X.push(['업무명','교대형태','인원','1인 청구단가','월 소계','비중']);
+  X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
+  results.forEach((w, i) => {
+    const e = i % 2;
+    r = X.push([w.name || `업무 ${w.id}`, SHIFT_DEF[w.shiftType]?.label || w.shiftType,
+                w.headcount, R(w.finPer), R(w.sub), grandTot > 0 ? w.sub / grandTot : 0]);
+    X.st(r,0, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,1, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,2, e?S.dataNum1:S.dataNum0, NUM);
+    X.st(r,3, e?S.subNum1:S.subNum0,   WON);
+    X.st(r,4, e?S.subNum1:S.subNum0,   WON);
+    X.st(r,5, e?S.pctNum1:S.pctNum0,   RATIO);
+    X.h(r, RH);
+  });
+  if (!results.length) { r = X.push(['(업무 없음)','','','','','']); X.stR(r,0,NC-1,S.dataTxt0); }
+  r = X.push(['전체 합계','—', totHead, totHead > 0 ? R(grandTot/totHead) : 0, R(grandTot), results.length ? 1 : 0]);
+  X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
+  X.st(r,2,S.totNum,NUM); X.st(r,3,S.totNum,WON); X.st(r,4,S.totNum,WON); X.st(r,5,S.totNum,RATIO);
+  X.push(); X.h(X.rows - 1, 6);
+
+  // ── 비용 구성 비율 ──
+  X.band('비용 구성 비율 — 전체 인원 · 월 청구액 기준', NC, S.secBlue, 20);
+  r = X.push(['분류','','','월 금액 (원)','','비중']);
+  X.mg(r,0,r,2); X.mg(r,3,r,4); X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
+  const agg = aggCost(results);
+  const aggTot = AGG_LBL.reduce((s, x) => s + agg[x[0]], 0);
+  AGG_LBL.forEach(([key, lbl], i) => {
+    const e = i % 2;
+    r = X.push([lbl, '', '', R(agg[key]), '', aggTot > 0 ? agg[key] / aggTot : 0]);
+    X.mg(r,0,r,2); X.mg(r,3,r,4);
+    X.stR(r,0,2, e?S.dataTxt1:S.dataTxt0);
+    X.stR(r,3,4, e?S.dataNum1:S.dataNum0, WON);
+    X.st(r,5,    e?S.pctNum1:S.pctNum0,   RATIO);
+    X.h(r, RH);
+  });
+  r = X.push(['합계','','', R(aggTot), '', aggTot > 0 ? 1 : 0]);
+  X.mg(r,0,r,2); X.mg(r,3,r,4);
+  X.stR(r,0,2,S.totTxt); X.stR(r,3,4,S.totNum,WON); X.st(r,5,S.totNum,RATIO);
+  X.push(); X.h(X.rows - 1, 6);
+
+  // ── 적용 법정비율 ──
+  X.band(`적용 법정비율 (${BASE_YEAR}년 법정 기준)`, NC, S.secBlue, 20);
+  const rates = [
+    ['국민연금', gv('rNP')],   ['건강보험', gv('rHI')],    ['장기요양', gv('rLT')],
+    ['실업급여', gv('rEI1')],  ['고용안정·직능', gv('rEI2')], ['산재보험(기본)', gv('rAcc')],
+    ['퇴직충당금', gv('rRet')],['관리비율', gv('mgmtRate')],
+  ];
+  for (let i = 0; i < rates.length; i += 3) {
+    const g = rates.slice(i, i + 3);
+    r = X.push(g.flatMap(x => [x[0], x[1]]).concat(Array(6 - g.length * 2).fill('')));
+    g.forEach((_, j) => { X.st(r, j*2, S.infoLbl); X.st(r, j*2+1, S.infoVal, RATE); });
+    for (let c = g.length * 2; c < NC; c++) X.st(r, c, S.infoVal);
+    X.h(r, RH);
+  }
+
+  // ── 업체 비교 요약 (입력됐을 때만) ──
+  if (cmp.has) {
+    const t = cmp.tot;
+    X.push(); X.h(X.rows - 1, 6);
+    X.band(`업체 산정안 비교 — ${cmp.vendorName || '업체'} · ${cmp.vatOn ? '총액(부가세 포함)' : '공급가액'} 기준`, NC, S.secBlue, 20);
+    r = X.push(['구분','내 산정','업체 산정','차이','차이율','판정']);
+    X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
+
+    const myAvg = t.mineHead > 0 ? t.mineMonthly / t.mineHead : 0;
+    const vAvg  = t.vHead    > 0 ? t.vMonthly    / t.vHead    : 0;
+    const DS = { over:S.diffOver, warn:S.diffWarn, under:S.diffUnder, eq:S.diffEq };
+    const DC = { over:S.diffOverC, warn:S.diffWarnC, under:S.diffUnderC, eq:S.diffEqC };
+    [
+      ['전체 인원 (명)',   t.mineHead,          t.vHead,          NUM, false, mkDiff('h','',t.mineHead,t.vHead)],
+      ['1인 평균단가 (원)',R(myAvg),            R(vAvg),          WON, false, mkDiff('u','',myAvg,vAvg)],
+      ['월 청구 총액 (원)',R(t.mineMonthly),    R(t.vMonthly),    WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }],
+      ['연간 환산 (원)',   R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }],
+    ].forEach(([lbl, mine, ven, z, grand, d]) => {
+      r = X.push([lbl, mine, ven, ven - mine, d.ratio ?? '', CMP_LBL[d.level]]);
+      if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
+      else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
+      X.st(r,3, DS[d.level], z); X.st(r,4, DS[d.level], RATIO); X.st(r,5, DC[d.level]);
+      X.h(r, grand ? 20 : RH);
+    });
+    // 월 차이 = 단가 효과 + 인원 효과
+    [['차이 요인 · 단가 효과 (원)', t.priceEffect, '(업체단가 − 내단가) × 내인원'],
+     ['차이 요인 · 인원 효과 (원)', t.headEffect,  '(업체인원 − 내인원) × 업체단가']]
+    .forEach(([lbl, val, note]) => {
+      r = X.push([lbl, '', '', R(val), note, '']);
+      X.mg(r,0,r,2); X.mg(r,4,r,5);
+      X.stR(r,0,2,S.sumLbl);
+      X.st(r,3, DS[val > 0 ? 'over' : val < 0 ? 'under' : 'eq'], WON);
+      X.stR(r,4,5,S.infoVal);
+      X.h(r, RH);
+    });
+  }
+
+  // ── 주석 ──
+  X.push(); X.h(X.rows - 1, 6);
+  const notes = compact
+    ? ['※ 금액은 월 기준 · 원 단위 반올림 · 세부 산출 근거는 「산정내역」 시트 참조']
+    : ['※ 금액은 모두 월 기준이며 원 단위로 반올림했습니다.',
+       '※ 비용 구성 비율은 전체 인원을 반영한 월 청구액 기준입니다.',
+       '※ 항목별 세부 산출 근거는 「산정내역」 시트를 참조하세요.'];
+  notes.forEach(n => { const rr = X.push([n]); X.mg(rr,0,rr,NC-1); X.stR(rr,0,NC-1,S.note); X.h(rr,15); });
+
+  return X.build(
+    [{wch:20},{wch:12},{wch:9},{wch:16},{wch:16},{wch:11}],
+    { rowH:RH, margins:{ left:0.4, right:0.4, top:0.5, bottom:0.45, header:0.2, footer:0.2 } });
+}
+
+// ── ② 산정내역 시트 — 세로 전환 (항목=행, 업무=열) ──────────
+function buildDetailSheet(base) {
+  const { welfare, fixed, results, totHead, mgmtR } = base;
+  const X = sheetCtx(), n = results.length;
+  const C0 = 2, CT = n + 2, NC = n + 3;      // A:항목 B:단위 C~:업무 끝:합계
+  const R = v => Math.round(v);
+  const today = new Date().toLocaleDateString('ko-KR');
+
+  // 업무 0건 — 유효한 시트를 만들고 조용히 끝낸다
+  if (!n) {
+    const t = X.band('협력업체 요율산정 — 산정내역', 3, S.title, 34);
+    const m = X.push(['업무가 없습니다. 「요율 산정」 탭에서 업무를 추가한 뒤 다시 내보내주세요.']);
+    X.mg(m,0,m,2); X.stR(m,0,2,S.infoVal);
+    return X.build([{wch:44},{wch:8},{wch:17}], { rowH:17 });
+  }
+
+  const heads = results.map(w => w.headcount);
+  const AVG_U = ['h','일','%','원/h'];                      // 합계를 인원 가중평균으로 내는 단위
+  let z = 0;                                                // 지브라 카운터 (밴드마다 리셋)
+
+  // 합계 열 산식은 B열(단위)이 결정한다 — '1인 금액'과 '총액'의 혼동을 구조로 차단
+  function totalOf(unit, vals) {
+    if (unit === '—') return '—';
+    if (unit === '원/인') return vals.reduce((s, v, i) => s + v * heads[i], 0);
+    if (AVG_U.includes(unit)) return totHead > 0 ? vals.reduce((s, v, i) => s + v * heads[i], 0) / totHead : 0;
+    return vals.reduce((s, v) => s + v, 0);                 // '원' · '명'
+  }
+
+  // kind: data | child(들여쓴 하위) | sub(소계) | grand(최종)
+  function row(label, unit, pick, kind = 'data', z0 = WON) {
+    const vals = results.map(pick);
+    const isTxt = unit === '—';
+    const isAvg = AVG_U.includes(unit);
+    const e = z++ % 2;
+    const r = X.push([label, unit, ...vals, totalOf(unit, vals)]);
+
+    X.st(r, 0, kind === 'grand' ? S.itmGrand : kind === 'sub' ? S.itmBold
+             : kind === 'child' ? (e?S.itmSub1:S.itmSub0) : (e?S.itmTxt1:S.itmTxt0));
+    X.st(r, 1, e?S.unit1:S.unit0);
+
+    const D = kind === 'grand' ? (e?S.grandNum1:S.grandNum0)
+            : kind === 'sub'   ? (e?S.subNum1:S.subNum0)
+            : (e?S.dataNum1:S.dataNum0);
+    const zf = unit === '%' ? RATE : z0;
+    if (isTxt) X.stR(r, C0, CT-1, e?S.dataTxt1:S.dataTxt0);
+    else       X.stR(r, C0, CT-1, D, zf);
+
+    X.st(r, CT, isTxt ? S.totEmpty
+              : isAvg ? (e?S.avgNum1:S.avgNum0)
+              : D,
+              isTxt ? undefined : isAvg ? (unit === '%' ? RATE : NUM1) : zf);
+    X.h(r, 17);
+    return r;
+  }
+  const band = (label, style) => { const r = X.band(label, NC, style, 20); z = 0; return r; };
+
+  // ── 제목 ──
+  X.band('협력업체 요율산정 — 산정내역', NC, S.title, 34);
+  X.band(`산정일 ${today} · ${BASE_YEAR}년 법정 기준 · 업무 ${n}건 · 전체 ${totHead}명`, NC, S.subTitle, 20);
+  X.push(); X.h(X.rows - 1, 6);
+
+  const hdrRow = X.push(['구분 / 항목', '단위', ...results.map(w => w.name || `업무 ${w.id}`), '전체 합계']);
+  X.stR(hdrRow, 0, NC-1, S.colHdr); X.h(hdrRow, 30);
+  row('교대형태', '—', w => SHIFT_DEF[w.shiftType]?.label || w.shiftType);
+
+  band('근무 조건', S.secBlue);
+  row('시급',     '원/h', w => w.hourlyRate);
+  row('인원',     '명',   w => w.headcount, 'data', NUM);
+  row('소정근로', 'h',    w => w.hoursRegular, 'data', NUM);
+  row('연장근로', 'h',    w => w.hoursOvertime, 'data', NUM);
+  row('야간근로', 'h',    w => w.hoursNight, 'data', NUM);
+  row('주말근무', '일',   w => w.weekendDays, 'data', NUM);
+  row('산재요율', '%',    w => w.accidentRate * 100);
+
+  band('① 인건비', S.secWage);
+  row('기본급',              '원/인', w => w.wBase);
+  row('연장수당 (가산 0.5)', '원/인', w => w.wOT);
+  row('야간수당 (가산 0.5)', '원/인', w => w.wNt);
+  row('휴일수당 (가산 0.5)', '원/인', w => w.wHol);
+  row('급여 합계',           '원/인', w => w.wSub, 'sub');
+
+  band('② 법정부담금', S.secVio);
+  row(`퇴직충당금 (${gv('rRet')}%)`,          '원/인', w => w.vRet);
+  row(`국민연금 (${gv('rNP')}%)`,             '원/인', w => w.vPen);
+  row(`건강보험 (${gv('rHI')}%)`,             '원/인', w => w.vHlt);
+  row(`장기요양보험 (${gv('rLT')}%)`,         '원/인', w => w.vLtc);
+  row(`실업급여 (${gv('rEI1')}%)`,            '원/인', w => w.vEmp1);
+  row(`고용안정·직업능력개발 (${gv('rEI2')}%)`,'원/인', w => w.vEmp2);
+  row('산재보험 (업무별 개별 적용)',           '원/인', w => w.vAcc);
+  row('법정부담금 계',                        '원/인', w => w.lSub, 'sub');
+
+  band('③ 복리후생비 — 전 업무 공통', S.secGreen);
+  if (welfare.details.length) welfare.details.forEach(f => row(f.lbl, '원/인', () => f.amt, 'child'));
+  else                        row('(선택 항목 없음)', '원/인', () => 0, 'child');
+  row('복리후생비 계', '원/인', w => w.wfTotal, 'sub');
+
+  band('④ 기타 고정비 — 월 합계를 전체 인원에 균등 배분', S.secAmber);
+  if (fixed.details.length) fixed.details.forEach(f =>
+    row(`${f.name || '미입력'} (월 ${fmtn(f.amt)}원)`, '원/인', () => totHead > 0 ? f.amt / totHead : 0, 'child'));
+  else                      row('(입력 항목 없음)', '원/인', () => 0, 'child');
+  row('기타고정비 계', '원/인', w => w.fxPerPerson, 'sub');
+
+  band('⑤ 청구 단가 산출', S.secBlue);
+  row('1인 순비용 (①+②+③+④)',            '원/인', w => w.netPer, 'sub');
+  row(`관리비 (${(mgmtR * 100).toFixed(2)}%)`, '원/인', w => w.mgmt);
+  row('1인 청구단가',                        '원/인', w => w.finPer, 'grand');
+  row('시간당 단가',                         '원/h',  w => w.hBill);
+  row('× 인원',                              '명',    w => w.headcount, 'data', NUM);
+  const lastRow = row('월 소계',             '원',    w => w.sub, 'grand');
+
+  // ── 주석 ──
+  X.push(); X.h(X.rows - 1, 6);
+  // 주석은 병합폭(한글 기준 대략 글자수)에 맞춰 줄 수를 계산해 높이를 준다 — 안 그러면 잘린다
+  const wW = n <= 6 ? 15 : n <= 10 ? 13 : 11;
+  const noteW = Math.floor((24 + 8 + n * wW + 17) / 2);
+  [ '※ 연장·야간·휴일수당은 근로기준법 제56조에 따른 가산분(0.5)만 계상했습니다.',
+    `※ 기타 고정비는 월 합계를 전체 인원(${totHead}명)으로 균등 배분한 금액입니다.`,
+    "※ 전체 합계 열 — '원/인'은 값×인원의 합, '원'·'명'은 단순 합, 'h'·'일'·'%'·'원/h'는 인원 가중평균(회색 표기)입니다.",
+    '※ 항목 순서가 곧 산식 순서입니다. 정렬하지 마세요 (단위 열 필터는 사용 가능).',
+  ].forEach(t => {
+    const rr = X.push([t]); X.mg(rr,0,rr,NC-1); X.stR(rr,0,NC-1,S.note);
+    X.h(rr, Math.max(15, Math.ceil(t.length / noteW) * 14));
+  });
+
+  return X.build(
+    [{wch:24},{wch:8}, ...Array(n).fill({wch:wW}), {wch:17}],
+    { rowH:17,
+      filter : X.ref(hdrRow, 0, lastRow, NC-1),
+      margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } });
+}
+
+// ── 산정안 비교 시트 ──────────────────────────────────────
+function buildCmpSheet(cmp) {
+  const X = sheetCtx(), NC = 11, t = cmp.tot, R = v => Math.round(v);
+  const DS = { over:S.diffOver,  warn:S.diffWarn,  under:S.diffUnder,  eq:S.diffEq  }; // 우측정렬
+  const DC = { over:S.diffOverC, warn:S.diffWarnC, under:S.diffUnderC, eq:S.diffEqC }; // 중앙정렬
+  const P  = rt => (rt === null || rt === undefined) ? '' : rt * 100;
+  let r;
+
+  // ── 제목 ──
+  r = X.push([`산정안 비교 — 내 산정 vs ${cmp.vendorName || '업체'}`]);
+  X.mg(r,0,r,NC-1); X.stR(r,0,NC-1, S.title);
+
+  r = X.push(['산정일', `${new Date().toLocaleDateString('ko-KR')} (${BASE_YEAR}년 법정 기준)`]);
+  X.st(r,0,S.infoLbl); X.st(r,1,S.infoVal);
+  r = X.push(['비교 기준', cmp.vatOn ? `총액 기준 (부가세 ${gv('cmpVatRate')}% 포함)` : '공급가액 기준 (부가세 제외)']);
+  X.st(r,0,S.infoLbl); X.st(r,1,S.infoVal);
+  X.push();
+
+  // ── 종합 요약 ──
+  r = X.push(['종합 요약']);  X.mg(r,0,r,4); X.stR(r,0,4, S.secVio);
+  r = X.push(['구분','내 산정','업체 산정','차이','차이율(%)']); X.stR(r,0,4, S.colHdrSm);
+
+  const myAvg = t.mineHead > 0 ? t.mineMonthly / t.mineHead : 0;
+  const vAvg  = t.vHead    > 0 ? t.vMonthly    / t.vHead    : 0;
+  const avgD  = mkDiff('u', '1인 평균', myAvg, vAvg);
+  const headD = mkDiff('h', '인원',     t.mineHead, t.vHead);
+
+  [
+    ['전체 인원(명)',      t.mineHead,          t.vHead,          NUM, false, headD.level,    headD.ratio],
+    ['1인 평균 단가(원)',  R(myAvg),            R(vAvg),          WON, false, avgD.level,     avgD.ratio],
+    ['월 청구 총액(원)',   R(t.mineMonthly),    R(t.vMonthly),    WON, true,  t.monthlyLevel, t.monthlyRatio],
+    ['연간 환산 금액(원)', R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  t.monthlyLevel, t.monthlyRatio],
+  ].forEach(([lbl, mine, ven, z, grand, lv, rt]) => {
+    r = X.push([lbl, mine, ven, ven - mine, P(rt)]);
+    if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
+    else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
+    X.st(r,3, DS[lv], z); X.st(r,4, DS[lv], PCT);
+  });
+
+  // 월 차이 = 단가 효과 + 인원 효과
+  [['차이 요인 · 단가 효과(원)', t.priceEffect, '(업체 단가 − 내 단가) × 내 인원'],
+   ['차이 요인 · 인원 효과(원)', t.headEffect,  '(업체 인원 − 내 인원) × 업체 단가']]
+  .forEach(([lbl, val, note]) => {
+    r = X.push([lbl, '', '', R(val), note]);
+    X.mg(r,0,r,2); X.stR(r,0,2, S.sumLbl);
+    X.st(r,3, DS[val > 0 ? 'over' : val < 0 ? 'under' : 'eq'], WON);
+    X.st(r,4, S.infoVal);
+  });
+
+  X.push();
+
+  // ── 업무별 비교 ──
+  r = X.push(['업무별 비교']); X.mg(r,0,r,NC-1); X.stR(r,0,NC-1, S.secBlue);
+  const hdrRow = X.push(['업무명','교대형태','내 인원','업체 인원','내 1인단가','업체 1인단가','단가 차이','내 월소계','업체 월소계','월 차이','차이율(%)']);
+  // 열군을 색으로 갈라 어느 쪽 값인지 즉시 구분되게 한다 (틀고정을 못 쓰는 대신)
+  X.stR(hdrRow, 0, 1,  S.colHdr);
+  for (const c of [2, 4, 7])  X.st(hdrRow, c, S.colHdrMine);   // 내 산정
+  for (const c of [3, 5, 8])  X.st(hdrRow, c, S.colHdrVen);    // 업체
+  for (const c of [6, 9, 10]) X.st(hdrRow, c, S.colHdr);       // 차이
+
+  cmp.rows.forEach((x, i) => {
+    const e = i % 2, txt = e?S.dataTxt1:S.dataTxt0, num = e?S.dataNum1:S.dataNum0, sub = e?S.subNum1:S.subNum0;
+    r = X.push([x.name, x.shiftLbl, x.mineHead, x.vHead,
+                R(x.mineUnit), R(x.vUnit), R(x.unitDiff),
+                R(x.mineTot), R(x.vTot), R(x.totDiff), P(x.totRatio)]);
+    X.st(r,0,txt); X.st(r,1,txt);
+    X.st(r,2,num,NUM); X.st(r,3,num,NUM);
+    X.st(r,4,sub,WON); X.st(r,5,sub,WON);
+    X.st(r,6, DS[x.filled ? x.unitLevel : 'eq'], WON);
+    X.st(r,7,num,WON); X.st(r,8,num,WON);
+    X.st(r,9,  DS[x.filled ? x.totLevel : 'eq'], WON);
+    X.st(r,10, DS[x.filled ? x.totLevel : 'eq'], PCT);
+  });
+
+  const lastDataRow = X.rows - 1;   // 자동필터에서 합계 행을 제외하기 위한 경계
+  r = X.push(['전체 합계','', t.mineHead, t.vHead, '', '', '',
+              R(t.mineMonthly), R(t.vMonthly), R(t.monthlyDiff), P(t.monthlyRatio)]);
+  X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
+  X.st(r,2,S.totNum,NUM); X.st(r,3,S.totNum,NUM);
+  X.stR(r,4,6,S.totEmpty);
+  X.st(r,7,S.totNum,WON); X.st(r,8,S.totNum,WON);
+  X.st(r,9,S.totNum,WON); X.st(r,10,S.totNum,PCT);
+
+  X.push();
+
+  // ── 항목별 비교 ──
+  r = X.push([`항목별 비교 — 상세 입력 ${t.coverage.detail}/${t.coverage.live}개 업무 기준 (전체 인원 · 월)`]);
+  X.mg(r,0,r,5); X.stR(r,0,5, S.secGreen);
+
+  if (!t.coverage.detail) {
+    r = X.push(['업무를 상세 모드로 입력하면 항목별 비교가 채워집니다.']);
+    X.mg(r,0,r,5); X.stR(r,0,5, S.infoVal);
+  } else {
+    r = X.push(['항목','내 산정(원)','업체(원)','차이(원)','차이율(%)','판정']);
+    X.stR(r,0,5, S.colHdrSm);
+    t.items.forEach((it, i) => {
+      const e = i % 2;
+      r = X.push([it.lbl, R(it.mine), R(it.vendor), R(it.diff), P(it.ratio), CMP_LBL[it.level]]);
+      X.st(r,0, e?S.dataTxt1:S.dataTxt0);
+      X.st(r,1, e?S.dataNum1:S.dataNum0, WON);
+      X.st(r,2, e?S.dataNum1:S.dataNum0, WON);
+      X.st(r,3, DS[it.level], WON);
+      X.st(r,4, DS[it.level], PCT);
+      X.st(r,5, DC[it.level]);
+    });
+    const sm = t.items.reduce((a, i) => ({ m:a.m + i.mine, v:a.v + i.vendor }), { m:0, v:0 });
+    const td = mkDiff('t', '합계', sm.m, sm.v);
+    r = X.push(['합계', R(td.mine), R(td.vendor), R(td.diff), P(td.ratio), CMP_LBL[td.level]]);
+    X.st(r,0,S.totTxt);
+    X.st(r,1,S.totNum,WON); X.st(r,2,S.totNum,WON); X.st(r,3,S.totNum,WON);
+    X.st(r,4,S.totNum,PCT); X.st(r,5,S.totEmpty);
+  }
+
+  X.h(0, 32); X.h(hdrRow, 30);
+
+  return X.build(
+    [{wch:18},{wch:10},{wch:9},{wch:10},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:14},{wch:11}],
+    { rowH:18,
+      filter : X.ref(hdrRow, 0, lastDataRow, NC-1),
+      margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } });
+}
+
+// ================================================================
+// SAVE / LOAD  (localStorage 기반)
+// ================================================================
+const SL_KEY = 'rateCalc_v1_saves';
+
+function getSaves() {
+  try { return JSON.parse(localStorage.getItem(SL_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function setSaves(arr) { localStorage.setItem(SL_KEY, JSON.stringify(arr)); }
+
+function collectState() {
+  const works = [];
+  for (let i = 1; i <= wkCnt; i++) {
+    if (!$(`work_${i}`)) continue;
+    works.push({
+      name:          $(`wName_${i}`)?.value || '',
+      shiftType:     $(`wShift_${i}`)?.value || 'day',
+      hourlyRate:    gv(`wRate_${i}`),
+      headcount:     gv(`wHead_${i}`),
+      accidentRate:  gv(`wAcc_${i}`),
+      hoursRegular:  gv(`wReg_${i}`),
+      hoursOvertime: gv(`wOT_${i}`),
+      hoursNight:    gv(`wNt_${i}`),
+      weekendDays:   gv(`wWk_${i}`),
+    });
+  }
+  const fixed = [];
+  for (let i = 1; i <= fxCnt; i++) {
+    if (!$(`fxRow_${i}`)) continue;
+    fixed.push({ name: $(`fxName_${i}`)?.value || '', amt: gv(`fxAmt_${i}`) });
+  }
+  const welfare = {};
+  for (const w of WF_ITEMS) {
+    welfare[w.id] = { checked: gc(w.id), value: gv(w.id + '_v') };
+  }
+  return {
+    rates: { rNP: gv('rNP'), rHI: gv('rHI'), rLT: gv('rLT'), rEI1: gv('rEI1'), rEI2: gv('rEI2'), rAcc: gv('rAcc'), rRet: gv('rRet'), mgmtRate: gv('mgmtRate') },
+    welfare, fixed, works,
+    vendor: collectVendorState(),
+  };
+}
+
+// 업체 산정안 — works 와 "동일 순서 배열"로 저장 (id 는 로드 시 재부여되므로 index 정합)
+function collectVendorState() {
+  const arr = [];
+  for (let i = 1; i <= wkCnt; i++) {
+    if (!$(`work_${i}`)) continue;            // collectState 의 works 루프와 동일 조건
+    const o = { mode: $(`cmpRow_${i}`)?.dataset.mode || 'simple',
+                head: gv(`v_head_${i}`), unit: gv(`v_unit_${i}`) };
+    for (const k of VENDOR_FIELDS) o[k] = gv(`v_${k}_${i}`);
+    arr.push(o);
+  }
+  return { name: $('cmpVendorName')?.value || '', vatOn: gc('cmpVatOn'),
+           vatRate: gv('cmpVatRate') || VAT_DEF, works: arr };
+}
+
+function applyVendorState(v) {
+  $('cmpVendorName').value = v?.name || '';
+  $('cmpVatOn').checked    = !!v?.vatOn;
+  $('cmpVatRate').value    = v?.vatRate ?? VAT_DEF;
+  if (!v?.works?.length) return;
+  renderCompare(computeAll());                // 비교 행 생성 보장
+  const ids = collectWorks().map(w => w.id);  // 현재 id 를 순서대로 → index zip
+  v.works.forEach((o, idx) => {
+    const id = ids[idx];
+    if (id == null || !$(`cmpRow_${id}`)) return;
+    $(`v_head_${id}`).value = o.head ?? 0;
+    $(`v_unit_${id}`).value = o.unit ?? 0;
+    for (const k of VENDOR_FIELDS) if ($(`v_${k}_${id}`)) $(`v_${k}_${id}`).value = o[k] ?? 0;
+    if (o.mode === 'detail') toggleCmpMode(id, 'detail');
+  });
+}
+
+function applyState(state) {
+  $('workList').innerHTML = '';
+  $('fixedRows').innerHTML = '';
+  $('cmpBody').innerHTML = '';
+  wkCnt = 0; fxCnt = 0;
+
+  if (state.rates) {
+    ['rNP','rHI','rLT','rEI1','rEI2','rAcc','rRet','mgmtRate'].forEach(k => { if (state.rates[k] !== undefined && $(k)) $(k).value = state.rates[k]; });
+  }
+  if (state.welfare) {
+    for (const w of WF_ITEMS) {
+      const sv = state.welfare[w.id];
+      if (!sv) continue;
+      if ($(w.id)) $(w.id).checked = sv.checked;
+      if ($(w.id + '_v')) $(w.id + '_v').value = sv.value;
+    }
+  }
+  if (state.fixed) {
+    for (const f of state.fixed) {
+      const id = ++fxCnt;
+      const div = document.createElement('div');
+      div.id = `fxRow_${id}`;
+      div.style.cssText = 'display:flex;align-items:center;gap:5px;';
+      div.innerHTML = `
+        <input type="text" placeholder="항목명" id="fxName_${id}" value="${esc(f.name)}" oninput="calculate()"
+          style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
+        <input type="number" placeholder="금액" id="fxAmt_${id}" value="${f.amt}" min="0" oninput="calculate()"
+          style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
+        <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>`;
+      $('fixedRows').appendChild(div);
+    }
+  }
+  if (state.works) {
+    for (const w of state.works) addWork(w);
+  }
+  applyVendorState(state.vendor);   // 구버전 저장본은 undefined → 비교 탭 빈 상태
+  calculate();
+}
+
+function openSlModal() {
+  const modal = $('slModal');
+  modal.style.display = 'flex';
+  const d = new Date();
+  $('slSaveName').value = `요율산정_${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  renderSlList();
+}
+
+function closeSlModal() { $('slModal').style.display = 'none'; }
+
+function doSave() {
+  const name = $('slSaveName').value.trim();
+  if (!name) { alert('저장 이름을 입력해주세요.'); $('slSaveName').focus(); return; }
+  const saves = getSaves();
+  saves.unshift({ id: Date.now(), name, savedAt: new Date().toISOString(), data: collectState() });
+  if (saves.length > 30) saves.pop();
+  setSaves(saves);
+  renderSlList();
+  const btn = $('slSaveBtn');
+  const orig = btn.textContent;
+  btn.textContent = '✅ 저장됨!';
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+
+function doLoad(id) {
+  if (!confirm('현재 입력 내용을 덮어쓰고 불러오시겠습니까?')) return;
+  const entry = getSaves().find(s => s.id === id);
+  if (!entry) { alert('저장 데이터를 찾을 수 없습니다.'); return; }
+  applyState(entry.data);
+  closeSlModal();
+}
+
+function doDelete(id) {
+  if (!confirm('이 저장을 삭제하시겠습니까?')) return;
+  setSaves(getSaves().filter(s => s.id !== id));
+  renderSlList();
+}
+
+function renderSlList() {
+  const saves = getSaves();
+  const el = $('slList');
+  if (!saves.length) {
+    el.innerHTML = '<div style="text-align:center;color:#a09080;font-size:12px;padding:24px 0;">저장된 요율이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = saves.map(s => {
+    const dt = new Date(s.savedAt);
+    const dateStr = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    const wCount = s.data?.works?.length || 0;
+    const heads  = (s.data?.works || []).reduce((a, w) => a + (w.headcount || 0), 0);
+    const hasCmp = (s.data?.vendor?.works || []).some(w => (w.unit || 0) > 0 || (w.base || 0) > 0);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid #ddd0bc;border-radius:7px;margin-bottom:6px;background:#fdf9f3;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:#4a3828;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.name)}</div>
+        <div style="font-size:10px;color:#9a8878;margin-top:2px;">${dateStr} · 업무 ${wCount}개 · 총 ${heads}명${hasCmp ? ' · <span style="color:#4d7a5a;font-weight:700;">비교안 ✓</span>' : ''}</div>
+      </div>
+      <button onclick="doLoad(${s.id})" style="background:#4d7a5a;color:white;border:none;padding:5px 13px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">불러오기</button>
+      <button onclick="doDelete(${s.id})" style="background:#c86858;color:white;border:none;padding:5px 10px;border-radius:5px;font-size:11px;cursor:pointer;">삭제</button>
+    </div>`;
+  }).join('');
+}
+
+// ================================================================
+// JSON 내보내기 / 가져오기 — localStorage는 브라우저·PC 종속이므로 파일 백업 제공
+// ================================================================
+function exportJSON() {
+  const payload = { app: 'rateCalc', version: 2, baseYear: BASE_YEAR, exportedAt: new Date().toISOString(), data: collectState() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = `요율산정_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importJSON(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj  = JSON.parse(reader.result);
+      const data = (obj?.app === 'rateCalc' && obj?.data) ? obj.data : obj; // 구조 유연 수용
+      if (!data || (!data.works && !data.rates)) throw new Error('요율산정 형식이 아닙니다');
+      if (!confirm('현재 입력 내용을 덮어쓰고 가져오시겠습니까?')) { input.value = ''; return; }
+      applyState(data);
+      closeSlModal();
+    } catch (e) {
+      alert('JSON 파일을 읽을 수 없습니다: ' + e.message);
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ================================================================
+// INIT — 기준값 표시 + 예시 업무 1개
+// ================================================================
+$('minWageAlert').textContent =
+  `⚠️ 일부 업무의 시급이 ${BASE_YEAR}년 법정 최저시급(${MIN_WAGE.toLocaleString('ko-KR')}원)보다 낮습니다.`;
+
+addWork({
+  name: '경비', shiftType: 'alternate', hourlyRate: MIN_WAGE,
+  headcount: 3, accidentRate: DEFAULT_RATES.rAcc,
+  hoursRegular: 209, hoursOvertime: 120, hoursNight: 60, weekendDays: 0,
+});
+</script>
+</body>
+</html>
