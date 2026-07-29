@@ -213,12 +213,12 @@
     <div class="panel">
       <div class="sec-hdr">🎁 복리후생비 <span style="font-size:10px;font-weight:400;color:#a09080;">전 업무 공통 · 1인 월 기준 (원)</span></div>
       <div style="display:flex;flex-direction:column;gap:5px;">
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_meal" checked onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_meal" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">식대</label><input type="number" min="0" id="wf_meal_v" value="200000" oninput="calculate()" class="inp" style="flex:1;"></div>
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_trans" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_trans" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">교통비</label><input type="number" min="0" id="wf_trans_v" value="100000" oninput="calculate()" class="inp" style="flex:1;"></div>
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_uni" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_uni" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">피복비</label><input type="number" min="0" id="wf_uni_v" value="50000" oninput="calculate()" class="inp" style="flex:1;"></div>
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_bonus" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_bonus" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">명절상여</label><input type="number" min="0" id="wf_bonus_v" value="83333" oninput="calculate()" class="inp" style="flex:1;"></div>
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_health" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_health" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">건강검진</label><input type="number" min="0" id="wf_health_v" value="30000" oninput="calculate()" class="inp" style="flex:1;"></div>
-        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_condo" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_condo" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">경조사비</label><input type="number" min="0" id="wf_condo_v" value="20000" oninput="calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_meal" checked onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_meal" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">식대</label><input type="text" inputmode="numeric" id="wf_meal_v" value="200,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_trans" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_trans" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">교통비</label><input type="text" inputmode="numeric" id="wf_trans_v" value="100,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_uni" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_uni" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">피복비</label><input type="text" inputmode="numeric" id="wf_uni_v" value="50,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_bonus" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_bonus" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">명절상여</label><input type="text" inputmode="numeric" id="wf_bonus_v" value="83,333" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_health" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_health" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">건강검진</label><input type="text" inputmode="numeric" id="wf_health_v" value="30,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_condo" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_condo" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">경조사비</label><input type="text" inputmode="numeric" id="wf_condo_v" value="20,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
       </div>
     </div>
 
@@ -510,11 +510,25 @@ let activeTab = 'calc';
 // UTIL
 // ================================================================
 const $   = id => document.getElementById(id);
-const gv  = id => Math.max(0, parseFloat($(id)?.value) || 0); // 음수 입력 방어
+const gv  = id => Math.max(0, parseFloat(String($(id)?.value ?? '').replace(/,/g, '')) || 0); // 콤마 제거 후 파싱, 음수 방어
 const gc  = id => $(id)?.checked || false;
 const fmt  = n => Math.round(n).toLocaleString('ko-KR') + '원';
 const fmtn = n => Math.round(n).toLocaleString('ko-KR');
 const esc  = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// 금액 입력칸 — 타이핑 중 실시간 천단위 콤마 포맷 (커서 위치 보존)
+function fmtMoney(el) {
+  const start = el.selectionStart ?? el.value.length;
+  const digitsBeforeCursor = el.value.slice(0, start).replace(/\D/g, '').length;
+  const digits = el.value.replace(/\D/g, '');
+  el.value = digits ? Number(digits).toLocaleString('ko-KR') : '';
+  if (!digitsBeforeCursor) { el.setSelectionRange(0, 0); return; }
+  let seen = 0, pos = el.value.length;
+  for (let i = 0; i < el.value.length; i++) {
+    if (/\d/.test(el.value[i]) && ++seen === digitsBeforeCursor) { pos = i + 1; break; }
+  }
+  el.setSelectionRange(pos, pos);
+}
 
 function rvd(id) { $(id).value = DEFAULT_RATES[id]; calculate(); } // CONFIG 기본값 복원
 
@@ -622,7 +636,7 @@ function addWork(p) {
     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr;gap:6px;margin-bottom:7px;">
       <div>
         <label style="font-size:10px;color:#7a6a58;">시급 (원)</label>
-        <input type="number" id="wRate_${id}" value="${p.hourlyRate}" min="0" oninput="calculate()"
+        <input type="text" inputmode="numeric" id="wRate_${id}" value="${fmtn(p.hourlyRate)}" oninput="fmtMoney(this);calculate()"
           style="width:100%;padding:4px 6px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:#fdf9f3;">
         <div id="wWarn_${id}" style="display:none;font-size:10px;color:#c06060;margin-top:1px;">⚠ 최저임금 미만</div>
       </div>
@@ -707,7 +721,7 @@ function addFixed() {
   div.innerHTML = `
     <input type="text" placeholder="항목명" id="fxName_${id}" oninput="calculate()"
       style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
-    <input type="number" placeholder="금액" id="fxAmt_${id}" value="0" min="0" oninput="calculate()"
+    <input type="text" inputmode="numeric" placeholder="금액" id="fxAmt_${id}" value="0" oninput="fmtMoney(this);calculate()"
       style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
     <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>
   `;
@@ -1103,7 +1117,7 @@ function buildCmpRowHTML(r) {
     <div style="${G}${i%2?'background:#faf5ee;':''}">
       <span style="color:#4a3828;">${row.lbl}</span>
       ${row.cmp ? `<span id="cm_${row.k}_${id}" style="text-align:right;color:#7a6a58;">-</span>` : dash}
-      <input type="number" id="v_${row.k}_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+      <input type="text" inputmode="numeric" id="v_${row.k}_${id}" value="0" oninput="fmtMoney(this);onCmp()" class="inp-c">
       ${row.cmp ? `<span id="ci_${row.k}_${id}" class="d-cell d-eq">-</span>
                    <span id="cr_${row.k}_${id}" class="d-cell d-eq">-</span>
                    <span id="cv_${row.k}_${id}" class="d-cell d-eq" style="text-align:center;">-</span>`
@@ -1134,7 +1148,7 @@ function buildCmpRowHTML(r) {
         <button onclick="syncCmpHead(${id})" id="vHeadSync_${id}" class="rstbtn no-print" style="display:none;" title="내 산정 인원으로 맞추기">↺</button>
       </div>
       <span id="cmpMyUnit_${id}" style="text-align:right;"></span>
-      <input type="number" id="v_unit_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+      <input type="text" inputmode="numeric" id="v_unit_${id}" value="0" oninput="fmtMoney(this);onCmp()" class="inp-c">
       <span id="cmpDU_${id}" class="d-cell d-eq">-</span>
       <span id="cmpMyTot_${id}" style="text-align:right;color:#7a6a58;"></span>
       <span id="cmpVTot_${id}" style="text-align:right;color:#4a3828;font-weight:600;"></span>
@@ -1155,7 +1169,7 @@ function buildCmpRowHTML(r) {
       ${subRow('공급가액 소계', `cmSup_${id}`, `vSup_${id}`, 'sup', true)}
       ${subRow('부가세', `cm_vat_${id}`, null, 'vat', false, `
         <div style="display:flex;align-items:center;gap:2px;">
-          <input type="number" id="v_vat_${id}" value="0" min="0" oninput="onCmp()" class="inp-c">
+          <input type="text" inputmode="numeric" id="v_vat_${id}" value="0" oninput="fmtMoney(this);onCmp()" class="inp-c">
           <button onclick="autoVat(${id})" class="rstbtn no-print" title="공급가액 × 세율로 자동 계산">↺</button>
         </div>`)}
       ${subRow('합계 (부가세 포함)', `cmGross_${id}`, `vGross_${id}`, 'gross', true)}
@@ -1262,7 +1276,7 @@ function paintCmpRows(cmp) {
     }
 
     // 상세 모드에서는 요약행의 업체 단가가 상세 합계를 따라간다 (readOnly라 입력 충돌 없음)
-    const unitEl = $(`v_unit_${id}`), v = String(Math.round(x.vSupply));
+    const unitEl = $(`v_unit_${id}`), v = fmtn(x.vSupply);
     if (unitEl && unitEl.value !== v) unitEl.value = v;
   }
 }
@@ -1401,10 +1415,10 @@ function toggleCmpMode(id, force) {
 
   if (to === 'detail') {
     // 간편 → 상세: 상세가 비어 있으면 간편값을 기본급으로 시딩 (0으로 급락 방지)
-    if (vendorSupply(id) === 0 && gv(`v_unit_${id}`) > 0) $(`v_base_${id}`).value = gv(`v_unit_${id}`);
+    if (vendorSupply(id) === 0 && gv(`v_unit_${id}`) > 0) $(`v_base_${id}`).value = fmtn(gv(`v_unit_${id}`));
   } else {
     // 상세 → 간편: 상세 합계를 간편 칸에 확정
-    $(`v_unit_${id}`).value = Math.round(vendorSupply(id));
+    $(`v_unit_${id}`).value = fmtn(vendorSupply(id));
   }
   row.dataset.mode = to;
   $(`vDet_${id}`).style.display = to === 'detail' ? 'block' : 'none';
@@ -1419,7 +1433,7 @@ function setAllCmpMode(mode) {
 
 function syncCmpHead(id) { $(`v_head_${id}`).value = gv(`wHead_${id}`); onCmp(); }
 
-function autoVat(id) { $(`v_vat_${id}`).value = Math.round(vendorSupply(id) * gv('cmpVatRate') / 100); onCmp(); }
+function autoVat(id) { $(`v_vat_${id}`).value = fmtn(vendorSupply(id) * gv('cmpVatRate') / 100); onCmp(); }
 
 function clearVendor(ask) {
   if (ask && !confirm('입력한 업체 산정안 값을 모두 지우시겠습니까?')) return;
@@ -1441,9 +1455,9 @@ function resetAll() {
   clearVendor();
   for (const [k, v] of Object.entries(DEFAULT_RATES)) { if ($(k)) $(k).value = v; }
   for (const w of WF_ITEMS) { if ($(w.id)) $(w.id).checked=(w.id==='wf_meal'); }
-  $('wf_meal_v').value=200000; $('wf_trans_v').value=100000;
-  $('wf_uni_v').value=50000; $('wf_bonus_v').value=83333;
-  $('wf_health_v').value=30000; $('wf_condo_v').value=20000;
+  $('wf_meal_v').value=fmtn(200000); $('wf_trans_v').value=fmtn(100000);
+  $('wf_uni_v').value=fmtn(50000); $('wf_bonus_v').value=fmtn(83333);
+  $('wf_health_v').value=fmtn(30000); $('wf_condo_v').value=fmtn(20000);
   addWork({ name:'경비', shiftType:'alternate', hourlyRate:MIN_WAGE, headcount:3, accidentRate:DEFAULT_RATES.rAcc, hoursRegular:209, hoursOvertime:120, hoursNight:60, weekendDays:0 });
 }
 
@@ -2181,8 +2195,8 @@ function applyVendorState(v) {
     const id = ids[idx];
     if (id == null || !$(`cmpRow_${id}`)) return;
     $(`v_head_${id}`).value = o.head ?? 0;
-    $(`v_unit_${id}`).value = o.unit ?? 0;
-    for (const k of VENDOR_FIELDS) if ($(`v_${k}_${id}`)) $(`v_${k}_${id}`).value = o[k] ?? 0;
+    $(`v_unit_${id}`).value = fmtn(o.unit ?? 0);
+    for (const k of VENDOR_FIELDS) if ($(`v_${k}_${id}`)) $(`v_${k}_${id}`).value = fmtn(o[k] ?? 0);
     if (o.mode === 'detail') toggleCmpMode(id, 'detail');
   });
 }
@@ -2201,7 +2215,7 @@ function applyState(state) {
       const sv = state.welfare[w.id];
       if (!sv) continue;
       if ($(w.id)) $(w.id).checked = sv.checked;
-      if ($(w.id + '_v')) $(w.id + '_v').value = sv.value;
+      if ($(w.id + '_v')) $(w.id + '_v').value = fmtn(sv.value);
     }
   }
   if (state.fixed) {
@@ -2213,7 +2227,7 @@ function applyState(state) {
       div.innerHTML = `
         <input type="text" placeholder="항목명" id="fxName_${id}" value="${esc(f.name)}" oninput="calculate()"
           style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
-        <input type="number" placeholder="금액" id="fxAmt_${id}" value="${f.amt}" min="0" oninput="calculate()"
+        <input type="text" inputmode="numeric" placeholder="금액" id="fxAmt_${id}" value="${fmtn(f.amt)}" oninput="fmtMoney(this);calculate()"
           style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
         <button onclick="removeFixed(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>`;
       $('fixedRows').appendChild(div);
