@@ -1532,6 +1532,7 @@ const EXCEL_THEMES = {
     band:['DCE0E3','E4E7E9','EAEDEF','F0F2F3','F5F6F7'],
     bg:'EFF1F2', panel:'FFFFFF', zebra:'F7F8F9', line:'D8DCDF', rule:'EDEFF1',
     tx:'2F3336', tx2:'5C6469', tx3:'8B9297', sub:'EDEFF1', grand:'E4E7E9', edge:'B9C0C4',
+    input:'FFF4CC',
     diff:{ over:['A33A2A','F7ECEA'], warn:['8A6A20','F6F1E3'], under:['2E6B4F','E9F1EC'], eq:['5C6469','FFFFFF'] } },
 
   navy: { label:'감청 네이비',
@@ -1539,6 +1540,7 @@ const EXCEL_THEMES = {
     band:['CDD8E5','D6DEE9','DFE6EE','E8EDF3','F1F4F7'],
     bg:'E8EDF3', panel:'FFFFFF', zebra:'F6F8FA', line:'CBD5E0', rule:'EDF1F5',
     tx:'1F2D40', tx2:'4A5A6E', tx3:'8595A6', sub:'EDF1F5', grand:'D6DEE9', edge:'A9B8CA',
+    input:'FFF4CC',
     diff:{ over:['9C3B2E','F7ECEA'], warn:['8A6A20','F6F1E3'], under:['2C6E52','E7F0EB'], eq:['4A5A6E','FFFFFF'] } },
 
   kraft: { label:'먹빛 브라운',
@@ -1546,6 +1548,7 @@ const EXCEL_THEMES = {
     band:['DED5C8','E5DED3','EBE5DC','F1ECE5','F6F3EE'],
     bg:'EFEAE2', panel:'FFFDFA', zebra:'FAF7F2', line:'DBD2C5', rule:'F0EBE3',
     tx:'3E362D', tx2:'6B5F52', tx3:'9A8E80', sub:'F0EBE3', grand:'E5DED3', edge:'C3B7A6',
+    input:'FFF4CC',
     diff:{ over:['9A3A2C','FAEDE9'], warn:['8A6A20','F7F1E2'], under:['3D6B4A','E9F1EA'], eq:['6B5F52','FFFFFF'] } },
 
   ink: { label:'잉크 블루 (선 위주)', flat:true,
@@ -1554,6 +1557,7 @@ const EXCEL_THEMES = {
     bg:'FFFFFF', panel:'FFFFFF', zebra:'FAFBFC', line:'C9D2DE', rule:'FFFFFF',
     tx:'1F2A3A', tx2:'46546A', tx3:'8A94A3', sub:'FFFFFF', grand:'FFFFFF', edge:'1F3352',
     tint:'EDF1F7',   // flat 테마에서 열군을 가르는 유일한 면
+    input:'FFF4CC',
     diff:{ over:['A03A28','FBEFEC'], warn:['8A6A20','F8F3E7'], under:['26674A','EBF2EE'], eq:['46546A','FFFFFF'] } },
 };
 
@@ -1645,6 +1649,11 @@ function applyExcelTheme(key) {
     // 요약 KPI 카드
     kpiLbl:   { font:font(9,1,T.tx2),  fill:fill(T.rule),  alignment:al('center'), border:{ top:bm, left:bm, right:bm } },
     kpiVal:   { font:font(16,1,T.hdr), fill:fill(T.panel), alignment:al('center'), border:{ bottom:bm, left:bm, right:bm } },
+    // 입력 가능 칸 (수식이 아니라 사용자가 직접 값을 넣는 셀 — 색으로만 구분, 잠금 없음)
+    inputTxt0:{ font:font(10,0,T.tx), fill:fill(T.input), alignment:al('left'),  border:thin },
+    inputTxt1:{ font:font(10,0,T.tx), fill:fill(T.input), alignment:al('left'),  border:thin },
+    inputNum0:{ font:font(10,0,T.tx), fill:fill(T.input), alignment:al('right'), border:thin },
+    inputNum1:{ font:font(10,0,T.tx), fill:fill(T.input), alignment:al('right'), border:thin },
     // 하단 주석
     note:     { font:font(9,0,T.tx3), alignment:al('left',1) },
     // 차이 판정 4단계 — 색을 쓰는 유일한 자리
@@ -1663,9 +1672,14 @@ function applyExcelTheme(key) {
 }
 applyExcelTheme(EXCEL_THEME);
 
+// ── 크로스시트 참조 헬퍼 (0-based 행/열 → A1 표기) ──────────
+const colL   = c0 => XLSX.utils.encode_col(c0);
+const A1     = (r0, c0) => '$' + colL(c0) + '$' + (r0 + 1);          // 절대참조, 같은 시트
+const xref   = (sheet, r0, c0) => `'${sheet}'!` + A1(r0, c0);        // 절대참조, 타 시트
+
 // ── 시트 빌더 (AOA + 스타일 메타 축적) ─────────────────────
 function sheetCtx() {
-  const aoa = [], meta = [], merges = [], hts = {};
+  const aoa = [], meta = [], merges = [], hts = {}, fxs = [];
   let r = 0;
   const api = {
     push(arr)              { aoa.push(arr || []); return r++; },
@@ -1674,6 +1688,8 @@ function sheetCtx() {
     mg(r1, c1, r2, c2)     { merges.push({ s:{ r:r1, c:c1 }, e:{ r:r2, c:c2 } }); },
     h(row, hpt)            { hts[row] = { hpt }; },
     ref(r1, c1, r2, c2)    { return XLSX.utils.encode_range({ s:{r:r1,c:c1}, e:{r:r2,c:c2} }); },
+    // 수식 오버레이 — aoa 리터럴 값(캐시) 위에 실제 셀 수식만 얹는다. .t/.v 는 그대로 둔다.
+    fx(row, col, formula)  { fxs.push({ row, col, formula }); },
     // 전폭 밴드 행 — push + 병합 + 스타일 + 행높이를 한 번에
     band(label, nc, style, hpt) {
       const row = api.push([label]);
@@ -1701,6 +1717,12 @@ function sheetCtx() {
         ws[ref].s = m.s;
         if (m.z) ws[ref].z = m.z;
       }
+      // 수식 오버레이 — aoa_to_sheet 가 만든 리터럴 셀의 캐시값(.v)은 유지한 채 .f 만 얹는다.
+      for (const x of fxs) {
+        const ref = XLSX.utils.encode_cell({ r:x.row, c:x.col });
+        if (!ws[ref]) ws[ref] = { t:'n', v:0 };
+        ws[ref].f = x.formula;
+      }
       ws['!merges'] = merges;
       ws['!cols']   = cols;
       ws['!rows']   = Array.from({ length:r }, (_, i) => hts[i] || { hpt: opt.rowH ?? 17 });
@@ -1712,6 +1734,102 @@ function sheetCtx() {
   return api;
 }
 
+// ── ⓪ 공통입력 시트 — 법정비율·복리후생비·기타고정비·VAT를 한 곳에 모은다.
+//   이 값을 바꾸면 산정내역·요약·산정안 비교 시트가 전부 이 시트를 참조해 재계산된다.
+function buildCommonInputSheet(base) {
+  const X = sheetCtx(), NC = 3;
+  const today = new Date().toLocaleDateString('ko-KR');
+  const CIN = {};
+
+  const inputRow = (label, value, z, note) => {
+    const r = X.push([label, value, note || '']);
+    X.st(r, 0, S.infoLbl);
+    X.st(r, 1, S.inputNum0, z);
+    X.st(r, 2, S.note);
+    X.h(r, 18);
+    return r;
+  };
+
+  X.band('공통입력 — 법정비율 · 복리후생비 · 기타고정비 · 부가세', NC, S.title, 34);
+  X.band(`산정일 ${today} · ${BASE_YEAR}년 법정 기준 · 옅은 배경(노란색) 칸만 직접 입력하세요`, NC, S.subTitle, 20);
+  X.push(); X.h(X.rows - 1, 6);
+
+  X.band('법정비율 · 관리비율', NC, S.secBlue, 20);
+  CIN.rNP  = inputRow('국민연금 (%)', gv('rNP'), RATE);
+  CIN.rHI  = inputRow('건강보험 (%)', gv('rHI'), RATE);
+  CIN.rLT  = inputRow('장기요양보험 (%)', gv('rLT'), RATE);
+  CIN.rEI1 = inputRow('실업급여 (%)', gv('rEI1'), RATE);
+  CIN.rEI2 = inputRow('고용안정·직업능력개발 (%)', gv('rEI2'), RATE);
+  CIN.rAcc = inputRow('산재보험 기본값 (%)', gv('rAcc'), RATE,
+    '신규 업무 추가 시 기본값입니다 — 실제 계산은 산정내역 시트의 업무별 개별 산재율을 사용합니다.');
+  CIN.rRet = inputRow('퇴직충당금 (%)', gv('rRet'), RATE);
+  CIN.mgmtRate = inputRow('관리비율 (%)', gv('mgmtRate'), RATE);
+  X.push(); X.h(X.rows - 1, 6);
+
+  X.band('복리후생비 — 전 업무 공통', NC, S.secGreen, 20);
+  let r = X.push(['항목', '적용(1/0)', '금액(원)']);
+  X.stR(r, 0, 2, S.colHdrSm); X.h(r, 20);
+  CIN.wf = [];
+  let wfCached = 0;
+  WF_ITEMS.forEach((w, i) => {
+    const on = gc(w.id) ? 1 : 0, amt = gv(w.id + '_v');
+    wfCached += on * amt;
+    const rr = X.push([w.lbl, on, amt]);
+    const e = i % 2;
+    X.st(rr, 0, e ? S.itmTxt1 : S.itmTxt0);
+    X.st(rr, 1, S.inputNum0, NUM);
+    X.st(rr, 2, S.inputNum0, WON);
+    X.h(rr, 18);
+    CIN.wf.push(rr);
+  });
+  CIN.wfTotalRow = X.push(['복리후생비 합계 (적용된 항목만 반영)', '', wfCached]);
+  X.st(CIN.wfTotalRow, 0, S.itmBold);
+  X.st(CIN.wfTotalRow, 1, S.itmBold);
+  X.st(CIN.wfTotalRow, 2, S.subNum0, WON);
+  X.h(CIN.wfTotalRow, 18);
+  X.fx(CIN.wfTotalRow, 2,
+    `SUMPRODUCT(B${CIN.wf[0]+1}:B${CIN.wf[CIN.wf.length-1]+1},C${CIN.wf[0]+1}:C${CIN.wf[CIN.wf.length-1]+1})`);
+  X.push(); X.h(X.rows - 1, 6);
+
+  X.band('기타고정비 — 동적 항목', NC, S.secAmber, 20);
+  r = X.push(['항목명', '월 금액(원)', '']);
+  X.stR(r, 0, 2, S.colHdrSm); X.h(r, 20);
+  CIN.fixed = [];
+  let fxCached = 0;
+  const fxDetails = base.fixed.details.length ? base.fixed.details : [{ name:'(입력 항목 없음)', amt:0 }];
+  fxDetails.forEach((f, i) => {
+    fxCached += f.amt;
+    const rr = X.push([f.name || '미입력', f.amt, '']);
+    const e = i % 2;
+    X.st(rr, 0, e ? S.itmTxt1 : S.itmTxt0);
+    X.st(rr, 1, S.inputNum0, WON);
+    X.st(rr, 2, e ? S.itmTxt1 : S.itmTxt0);
+    X.h(rr, 18);
+    CIN.fixed.push(rr);
+  });
+  CIN.fxTotalRow = X.push(['기타고정비 합계', fxCached, '']);
+  X.st(CIN.fxTotalRow, 0, S.itmBold);
+  X.st(CIN.fxTotalRow, 1, S.subNum0, WON);
+  X.st(CIN.fxTotalRow, 2, S.itmBold);
+  X.h(CIN.fxTotalRow, 18);
+  X.fx(CIN.fxTotalRow, 1,
+    `SUM(B${CIN.fixed[0]+1}:B${CIN.fixed[CIN.fixed.length-1]+1})`);
+  X.push(); X.h(X.rows - 1, 6);
+
+  X.band('부가세(VAT) — 산정안 비교 시트 전용', NC, S.secVio, 20);
+  CIN.vatOn   = inputRow('부가세 적용 (1=적용, 0=미적용)', gc('cmpVatOn') ? 1 : 0, NUM);
+  CIN.vatRate = inputRow('부가세율 (%)', gv('cmpVatRate'), RATE);
+
+  const rr2 = X.push(['※ 옅은 배경(노란색) 칸의 값을 바꾸면 「산정내역」·「요약」·「산정안 비교」 시트가 자동으로 재계산됩니다.']);
+  X.mg(rr2, 0, rr2, NC-1); X.stR(rr2, 0, NC-1, S.note); X.h(rr2, 15);
+
+  return {
+    ws: X.build([{wch:28},{wch:14},{wch:44}], { rowH:18,
+      margins:{ left:0.3, right:0.3, top:0.4, bottom:0.4, header:0.2, footer:0.2 } }),
+    ref: CIN,
+  };
+}
+
 function exportExcel() {
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
 
@@ -1719,18 +1837,25 @@ function exportExcel() {
   const cmp  = compareAll(base);
   const wb   = XLSX.utils.book_new();
 
-  const wsSum = buildSummarySheet(base, cmp);
+  // 참조 대상(공통입력·산정내역·산정안 비교)을 먼저 만들고, 탭 노출 순서는 append 순서로 별도로 정한다.
+  const cin      = buildCommonInputSheet(base);
+  const det      = buildDetailSheet(base, cin.ref);
+  const cmpSheet = cmp.has ? buildCmpSheet(cmp, cin.ref, det.ref) : null;
+  const wsSum    = buildSummarySheet(base, cmp, cin.ref, det.ref, cmpSheet?.ref);
+
+  XLSX.utils.book_append_sheet(wb, cin.ws, '공통입력');
   XLSX.utils.book_append_sheet(wb, wsSum, '요약');
-  XLSX.utils.book_append_sheet(wb, buildDetailSheet(base), '산정내역');
-  if (cmp.has) XLSX.utils.book_append_sheet(wb, buildCmpSheet(cmp), '산정안 비교');
+  XLSX.utils.book_append_sheet(wb, det.ws, '산정내역');
+  if (cmpSheet) XLSX.utils.book_append_sheet(wb, cmpSheet.ws, '산정안 비교');
 
   // 인쇄 설정 — 틀고정을 쓸 수 없으므로 정의된 이름으로 대체한다.
   //   Print_Area   : 요약 시트를 A4 세로 1장 범위로 고정
   //   Print_Titles : 산정내역이 여러 장으로 넘어가도 항목명·단위 열을 매 장 반복
+  // ★ 공통입력 탭이 맨 앞에 끼어들며 시트 인덱스가 밀리므로 항상 SheetNames에서 동적으로 찾는다.
   const sumEnd = XLSX.utils.decode_range(wsSum['!ref']).e.r + 1;
   wb.Workbook = { Names: [
-    { Name:'_xlnm.Print_Area',   Sheet:0, Ref:`'요약'!$A$1:$F$${sumEnd}` },
-    { Name:'_xlnm.Print_Titles', Sheet:1, Ref:"'산정내역'!$A:$B" },
+    { Name:'_xlnm.Print_Area',   Sheet:wb.SheetNames.indexOf('요약'),   Ref:`'요약'!$A$1:$F$${sumEnd}` },
+    { Name:'_xlnm.Print_Titles', Sheet:wb.SheetNames.indexOf('산정내역'), Ref:"'산정내역'!$A:$B" },
   ]};
 
   const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
@@ -1738,12 +1863,14 @@ function exportExcel() {
 }
 
 // ── ① 요약 시트 — A4 세로 1장 (결재·보고용) ────────────────
-function buildSummarySheet(base, cmp) {
+function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   const { results, totHead, grandTot } = base;
   const X = sheetCtx(), NC = 6, R = v => Math.round(v);
   const compact = results.length > 6;              // 업무가 많으면 1장 유지를 위해 압축
   const RH = compact ? 15 : 17;
   const today = new Date().toLocaleDateString('ko-KR');
+  const D  = (r0, c0) => xref('산정내역', r0, c0);   // 산정내역 시트 절대참조 축약
+  const CN = key => xref('공통입력', cin[key], 1);   // 공통입력 시트 값(B열) 절대참조 축약
   let r;
 
   // ── 제목 ──
@@ -1764,16 +1891,19 @@ function buildSummarySheet(base, cmp) {
   r = X.push(kpi.flatMap(k => [k[1], '']));
   kpi.forEach((k, i) => { X.mg(r, i*2, r, i*2+1); X.stR(r, i*2, i*2+1, S.kpiVal, k[2]); });
   X.h(r, 30);
+  const kpiValRow = r;
   X.push(); X.h(X.rows - 1, 6);
 
   // ── 업무별 요약 ──
   X.band('업무별 요약', NC, S.secBlue, 20);
   r = X.push(['업무명','교대형태','인원','1인 청구단가','월 소계','비중']);
   X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
+  const workRows = [];
   results.forEach((w, i) => {
     const e = i % 2;
     r = X.push([w.name || `업무 ${w.id}`, SHIFT_DEF[w.shiftType]?.label || w.shiftType,
                 w.headcount, R(w.finPer), R(w.sub), grandTot > 0 ? w.sub / grandTot : 0]);
+    workRows.push(r);
     X.st(r,0, e?S.dataTxt1:S.dataTxt0);
     X.st(r,1, e?S.dataTxt1:S.dataTxt0);
     X.st(r,2, e?S.dataNum1:S.dataNum0, NUM);
@@ -1784,6 +1914,7 @@ function buildSummarySheet(base, cmp) {
   });
   if (!results.length) { r = X.push(['(업무 없음)','','','','','']); X.stR(r,0,NC-1,S.dataTxt0); }
   r = X.push(['전체 합계','—', totHead, totHead > 0 ? R(grandTot/totHead) : 0, R(grandTot), results.length ? 1 : 0]);
+  const totalRow = r;
   X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
   X.st(r,2,S.totNum,NUM); X.st(r,3,S.totNum,WON); X.st(r,4,S.totNum,WON); X.st(r,5,S.totNum,RATIO);
   X.push(); X.h(X.rows - 1, 6);
@@ -1794,9 +1925,11 @@ function buildSummarySheet(base, cmp) {
   X.mg(r,0,r,2); X.mg(r,3,r,4); X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
   const agg = aggCost(results);
   const aggTot = AGG_LBL.reduce((s, x) => s + agg[x[0]], 0);
+  const aggRows = [];
   AGG_LBL.forEach(([key, lbl], i) => {
     const e = i % 2;
     r = X.push([lbl, '', '', R(agg[key]), '', aggTot > 0 ? agg[key] / aggTot : 0]);
+    aggRows.push(r);
     X.mg(r,0,r,2); X.mg(r,3,r,4);
     X.stR(r,0,2, e?S.dataTxt1:S.dataTxt0);
     X.stR(r,3,4, e?S.dataNum1:S.dataNum0, WON);
@@ -1804,23 +1937,61 @@ function buildSummarySheet(base, cmp) {
     X.h(r, RH);
   });
   r = X.push(['합계','','', R(aggTot), '', aggTot > 0 ? 1 : 0]);
+  const aggTotalRow = r;
   X.mg(r,0,r,2); X.mg(r,3,r,4);
   X.stR(r,0,2,S.totTxt); X.stR(r,3,4,S.totNum,WON); X.st(r,5,S.totNum,RATIO);
   X.push(); X.h(X.rows - 1, 6);
 
-  // ── 적용 법정비율 ──
+  // ── 적용 법정비율 (공통입력 시트를 그대로 참조) ──
   X.band(`적용 법정비율 (${BASE_YEAR}년 법정 기준)`, NC, S.secBlue, 20);
   const rates = [
-    ['국민연금', gv('rNP')],   ['건강보험', gv('rHI')],    ['장기요양', gv('rLT')],
-    ['실업급여', gv('rEI1')],  ['고용안정·직능', gv('rEI2')], ['산재보험(기본)', gv('rAcc')],
-    ['퇴직충당금', gv('rRet')],['관리비율', gv('mgmtRate')],
+    ['국민연금', gv('rNP'), 'rNP'],   ['건강보험', gv('rHI'), 'rHI'],    ['장기요양', gv('rLT'), 'rLT'],
+    ['실업급여', gv('rEI1'), 'rEI1'],  ['고용안정·직능', gv('rEI2'), 'rEI2'], ['산재보험(기본)', gv('rAcc'), 'rAcc'],
+    ['퇴직충당금', gv('rRet'), 'rRet'],['관리비율', gv('mgmtRate'), 'mgmtRate'],
   ];
   for (let i = 0; i < rates.length; i += 3) {
     const g = rates.slice(i, i + 3);
     r = X.push(g.flatMap(x => [x[0], x[1]]).concat(Array(6 - g.length * 2).fill('')));
-    g.forEach((_, j) => { X.st(r, j*2, S.infoLbl); X.st(r, j*2+1, S.infoVal, RATE); });
+    g.forEach((x, j) => { X.st(r, j*2, S.infoLbl); X.st(r, j*2+1, S.infoVal, RATE); X.fx(r, j*2+1, CN(x[2])); });
     for (let c = g.length * 2; c < NC; c++) X.st(r, c, S.infoVal);
     X.h(r, RH);
+  }
+
+  // ── 수식 오버레이 — 산정내역·공통입력 시트를 참조 (업무 0건이면 참조할 대상이 없으므로 생략) ──
+  if (det) {
+    X.fx(kpiValRow, 0, D(det.head, det.CT));
+    X.fx(kpiValRow, 2, `ROUND(${D(det.sub, det.CT)},0)`);
+    X.fx(kpiValRow, 4, `ROUND(${D(det.sub, det.CT)}*12,0)`);
+
+    workRows.forEach((rr, i) => {
+      const c = det.C0 + i;
+      X.fx(rr, 2, D(det.head, c));
+      X.fx(rr, 3, `ROUND(${D(det.finPer, c)},0)`);
+      X.fx(rr, 4, `ROUND(${D(det.sub, c)},0)`);
+      X.fx(rr, 5, `IF(${colL(4)}${totalRow+1}>0,${colL(4)}${rr+1}/${colL(4)}${totalRow+1},0)`);
+    });
+    X.fx(totalRow, 2, D(det.head, det.CT));
+    X.fx(totalRow, 3, `ROUND(${D(det.sub, det.CT)}/${D(det.head, det.CT)},0)`);
+    X.fx(totalRow, 4, `ROUND(${D(det.sub, det.CT)},0)`);
+    // 비중 합계(col5)는 원래도 "업무가 있으면 무조건 1"(grandTot=0이어도)이라 개별 행 비중의 합과
+    // 정의가 다르다 — SUM 수식으로 얹으면 grandTot=0일 때 0이 되어 기존 표시(1)와 어긋나므로 그대로 리터럴 유지.
+
+    const AGG_FX = {
+      wBase: () => D(det.wBase, det.CT),
+      wAlw:  () => `SUM(${D(det.wOT,det.CT)},${D(det.wNt,det.CT)},${D(det.wHol,det.CT)})`,
+      vRet:  () => D(det.vRet, det.CT),
+      ins:   () => `${D(det.lSub,det.CT)}-${D(det.vRet,det.CT)}`,
+      wf:    () => D(det.wfSub, det.CT),
+      fx:    () => D(det.fxSub, det.CT),
+      mgmt:  () => D(det.mgmt, det.CT),
+    };
+    AGG_LBL.forEach(([key], i) => {
+      const rr = aggRows[i];
+      X.fx(rr, 3, `ROUND(${AGG_FX[key]()},0)`);
+      X.fx(rr, 5, `IF(${colL(3)}${aggTotalRow+1}>0,${colL(3)}${rr+1}/${colL(3)}${aggTotalRow+1},0)`);
+    });
+    X.fx(aggTotalRow, 3, `SUM(${colL(3)}${aggRows[0]+1}:${colL(3)}${aggRows[aggRows.length-1]+1})`);
+    X.fx(aggTotalRow, 5, `SUM(${colL(5)}${aggRows[0]+1}:${colL(5)}${aggRows[aggRows.length-1]+1})`);
   }
 
   // ── 업체 비교 요약 (입력됐을 때만) ──
@@ -1835,29 +2006,52 @@ function buildSummarySheet(base, cmp) {
     const vAvg  = t.vHead    > 0 ? t.vMonthly    / t.vHead    : 0;
     const DS = { over:S.diffOver, warn:S.diffWarn, under:S.diffUnder, eq:S.diffEq };
     const DC = { over:S.diffOverC, warn:S.diffWarnC, under:S.diffUnderC, eq:S.diffEqC };
+    const judgeFx = (mineRef, diffRef) =>
+      `IF(${mineRef}<=0,IF(${diffRef}>0,"과다","동등"),`
+      + `IF(${diffRef}/${mineRef}>=0.15,"과다",`
+      + `IF(${diffRef}/${mineRef}>=0.05,"주의",`
+      + `IF(${diffRef}/${mineRef}<=-0.05,"절감","동등"))))`;
+    const CR = {};
     [
-      ['전체 인원 (명)',   t.mineHead,          t.vHead,          NUM, false, mkDiff('h','',t.mineHead,t.vHead)],
-      ['1인 평균단가 (원)',R(myAvg),            R(vAvg),          WON, false, mkDiff('u','',myAvg,vAvg)],
-      ['월 청구 총액 (원)',R(t.mineMonthly),    R(t.vMonthly),    WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }],
-      ['연간 환산 (원)',   R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }],
-    ].forEach(([lbl, mine, ven, z, grand, d]) => {
+      ['전체 인원 (명)',   t.mineHead,          t.vHead,          NUM, false, mkDiff('h','',t.mineHead,t.vHead), 'head'],
+      ['1인 평균단가 (원)',R(myAvg),            R(vAvg),          WON, false, mkDiff('u','',myAvg,vAvg), 'avg'],
+      ['월 청구 총액 (원)',R(t.mineMonthly),    R(t.vMonthly),    WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }, 'monthly'],
+      ['연간 환산 (원)',   R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }, 'annual'],
+    ].forEach(([lbl, mine, ven, z, grand, d, key]) => {
       r = X.push([lbl, mine, ven, ven - mine, d.ratio ?? '', CMP_LBL[d.level]]);
+      CR[key] = r;
       if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
       else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
       X.st(r,3, DS[d.level], z); X.st(r,4, DS[d.level], RATIO); X.st(r,5, DC[d.level]);
       X.h(r, grand ? 20 : RH);
     });
     // 월 차이 = 단가 효과 + 인원 효과
-    [['차이 요인 · 단가 효과 (원)', t.priceEffect, '(업체단가 − 내단가) × 내인원'],
-     ['차이 요인 · 인원 효과 (원)', t.headEffect,  '(업체인원 − 내인원) × 업체단가']]
-    .forEach(([lbl, val, note]) => {
+    [['차이 요인 · 단가 효과 (원)', t.priceEffect, '(업체단가 − 내단가) × 내인원', 'price'],
+     ['차이 요인 · 인원 효과 (원)', t.headEffect,  '(업체인원 − 내인원) × 업체단가', 'headEff']]
+    .forEach(([lbl, val, note, key]) => {
       r = X.push([lbl, '', '', R(val), note, '']);
+      CR[key] = r;
       X.mg(r,0,r,2); X.mg(r,4,r,5);
       X.stR(r,0,2,S.sumLbl);
       X.st(r,3, DS[val > 0 ? 'over' : val < 0 ? 'under' : 'eq'], WON);
       X.stR(r,4,5,S.infoVal);
       X.h(r, RH);
     });
+
+    // 수식 오버레이 — '산정안 비교' 시트의 종합요약 셀을 그대로 참조 (로직 중복 금지)
+    if (cmpRef) {
+      const CS = (r0, c0) => xref('산정안 비교', r0, c0);
+      ['head','avg','monthly','annual'].forEach(key => {
+        const rr = CR[key], sr = cmpRef.SR[key];
+        X.fx(rr, 1, CS(sr, 1));
+        X.fx(rr, 2, CS(sr, 2));
+        X.fx(rr, 3, `${colL(2)}${rr+1}-${colL(1)}${rr+1}`);
+        X.fx(rr, 4, `IF(${colL(1)}${rr+1}>0,${colL(3)}${rr+1}/${colL(1)}${rr+1},"")`);
+        X.fx(rr, 5, judgeFx(`${colL(1)}${rr+1}`, `${colL(3)}${rr+1}`));
+      });
+      X.fx(CR.price,   3, CS(cmpRef.SR.price, 3));
+      X.fx(CR.headEff, 3, CS(cmpRef.SR.headEff, 3));
+    }
   }
 
   // ── 주석 ──
@@ -1875,26 +2069,26 @@ function buildSummarySheet(base, cmp) {
 }
 
 // ── ② 산정내역 시트 — 세로 전환 (항목=행, 업무=열) ──────────
-function buildDetailSheet(base) {
+function buildDetailSheet(base, cin) {
   const { welfare, fixed, results, totHead, mgmtR } = base;
   const X = sheetCtx(), n = results.length;
   const C0 = 2, CT = n + 2, NC = n + 3;      // A:항목 B:단위 C~:업무 끝:합계
-  const R = v => Math.round(v);
   const today = new Date().toLocaleDateString('ko-KR');
 
-  // 업무 0건 — 유효한 시트를 만들고 조용히 끝낸다
+  // 업무 0건 — 유효한 시트를 만들고 조용히 끝낸다 (참조할 값이 없으니 ref:null)
   if (!n) {
     const t = X.band('협력업체 요율산정 — 산정내역', 3, S.title, 34);
     const m = X.push(['업무가 없습니다. 「요율 산정」 탭에서 업무를 추가한 뒤 다시 내보내주세요.']);
     X.mg(m,0,m,2); X.stR(m,0,2,S.infoVal);
-    return X.build([{wch:44},{wch:8},{wch:17}], { rowH:17 });
+    return { ws: X.build([{wch:44},{wch:8},{wch:17}], { rowH:17 }), ref: null };
   }
 
   const heads = results.map(w => w.headcount);
   const AVG_U = ['h','일','%','원/h'];                      // 합계를 인원 가중평균으로 내는 단위
   let z = 0;                                                // 지브라 카운터 (밴드마다 리셋)
+  const rowUnit = {};                                       // row index → unit (합계열 수식 일괄 생성용)
 
-  // 합계 열 산식은 B열(단위)이 결정한다 — '1인 금액'과 '총액'의 혼동을 구조로 차단
+  // 합계 열 캐시값은 기존과 동일한 산식으로 계산해 둔다 — 실제 합계열 수식은 아래서 별도로 얹는다
   function totalOf(unit, vals) {
     if (unit === '—') return '—';
     if (unit === '원/인') return vals.reduce((s, v, i) => s + v * heads[i], 0);
@@ -1903,27 +2097,35 @@ function buildDetailSheet(base) {
   }
 
   // kind: data | child(들여쓴 하위) | sub(소계) | grand(최종)
-  function row(label, unit, pick, kind = 'data', z0 = WON) {
+  // isInput: true 면 업무별 열(C~)을 옅은 배경(input 스타일)으로 표시 — 직접 값을 넣는 칸이라는 뜻
+  function row(label, unit, pick, kind = 'data', z0 = WON, isInput = false) {
     const vals = results.map(pick);
     const isTxt = unit === '—';
     const isAvg = AVG_U.includes(unit);
     const e = z++ % 2;
     const r = X.push([label, unit, ...vals, totalOf(unit, vals)]);
+    rowUnit[r] = unit;
 
     X.st(r, 0, kind === 'grand' ? S.itmGrand : kind === 'sub' ? S.itmBold
              : kind === 'child' ? (e?S.itmSub1:S.itmSub0) : (e?S.itmTxt1:S.itmTxt0));
     X.st(r, 1, e?S.unit1:S.unit0);
 
-    const D = kind === 'grand' ? (e?S.grandNum1:S.grandNum0)
-            : kind === 'sub'   ? (e?S.subNum1:S.subNum0)
-            : (e?S.dataNum1:S.dataNum0);
+    // 업무별 열(main) 스타일 — input 행이면 옅은 배경, 아니면 기존 로직 그대로
+    const Dmain = kind === 'grand' ? (e?S.grandNum1:S.grandNum0)
+                : kind === 'sub'   ? (e?S.subNum1:S.subNum0)
+                : isInput          ? (e?S.inputNum1:S.inputNum0)
+                : (e?S.dataNum1:S.dataNum0);
+    // 합계열(CT) 스타일 — 항상 수식 결과이므로 input 스타일을 절대 쓰지 않는다
+    const Dtot = kind === 'grand' ? (e?S.grandNum1:S.grandNum0)
+               : kind === 'sub'   ? (e?S.subNum1:S.subNum0)
+               : (e?S.dataNum1:S.dataNum0);
     const zf = unit === '%' ? RATE : z0;
     if (isTxt) X.stR(r, C0, CT-1, e?S.dataTxt1:S.dataTxt0);
-    else       X.stR(r, C0, CT-1, D, zf);
+    else       X.stR(r, C0, CT-1, Dmain, zf);
 
     X.st(r, CT, isTxt ? S.totEmpty
               : isAvg ? (e?S.avgNum1:S.avgNum0)
-              : D,
+              : Dtot,
               isTxt ? undefined : isAvg ? (unit === '%' ? RATE : NUM1) : zf);
     X.h(r, 17);
     return r;
@@ -1937,52 +2139,104 @@ function buildDetailSheet(base) {
 
   const hdrRow = X.push(['구분 / 항목', '단위', ...results.map(w => w.name || `업무 ${w.id}`), '전체 합계']);
   X.stR(hdrRow, 0, NC-1, S.colHdr); X.h(hdrRow, 30);
-  row('교대형태', '—', w => SHIFT_DEF[w.shiftType]?.label || w.shiftType);
+  const RM = {};
+  RM.shift = row('교대형태', '—', w => SHIFT_DEF[w.shiftType]?.label || w.shiftType);
 
-  band('근무 조건', S.secBlue);
-  row('시급',     '원/h', w => w.hourlyRate);
-  row('인원',     '명',   w => w.headcount, 'data', NUM);
-  row('소정근로', 'h',    w => w.hoursRegular, 'data', NUM);
-  row('연장근로', 'h',    w => w.hoursOvertime, 'data', NUM);
-  row('야간근로', 'h',    w => w.hoursNight, 'data', NUM);
-  row('주말근무', '일',   w => w.weekendDays, 'data', NUM);
-  row('산재요율', '%',    w => w.accidentRate * 100);
+  band('근무 조건 — 노란 배경 칸만 직접 입력', S.secBlue);
+  RM.rate    = row('시급',     '원/h', w => w.hourlyRate,       'data', WON, true);
+  RM.head    = row('인원',     '명',   w => w.headcount,        'data', NUM, true);
+  RM.hReg    = row('소정근로', 'h',    w => w.hoursRegular,     'data', NUM, true);
+  RM.hOT     = row('연장근로', 'h',    w => w.hoursOvertime,    'data', NUM, true);
+  RM.hNt     = row('야간근로', 'h',    w => w.hoursNight,       'data', NUM, true);
+  RM.wkDays  = row('주말근무', '일',   w => w.weekendDays,      'data', NUM, true);
+  RM.accRate = row('산재요율', '%',    w => w.accidentRate*100, 'data', WON, true);
 
   band('① 인건비', S.secWage);
-  row('기본급',              '원/인', w => w.wBase);
-  row('연장수당 (가산 0.5)', '원/인', w => w.wOT);
-  row('야간수당 (가산 0.5)', '원/인', w => w.wNt);
-  row('휴일수당 (가산 0.5)', '원/인', w => w.wHol);
-  row('급여 합계',           '원/인', w => w.wSub, 'sub');
+  RM.wBase = row('기본급',              '원/인', w => w.wBase);
+  RM.wOT   = row('연장수당 (가산 0.5)', '원/인', w => w.wOT);
+  RM.wNt   = row('야간수당 (가산 0.5)', '원/인', w => w.wNt);
+  RM.wHol  = row('휴일수당 (가산 0.5)', '원/인', w => w.wHol);
+  RM.wSub  = row('급여 합계',           '원/인', w => w.wSub, 'sub');
 
-  band('② 법정부담금', S.secVio);
-  row(`퇴직충당금 (${gv('rRet')}%)`,          '원/인', w => w.vRet);
-  row(`국민연금 (${gv('rNP')}%)`,             '원/인', w => w.vPen);
-  row(`건강보험 (${gv('rHI')}%)`,             '원/인', w => w.vHlt);
-  row(`장기요양보험 (${gv('rLT')}%)`,         '원/인', w => w.vLtc);
-  row(`실업급여 (${gv('rEI1')}%)`,            '원/인', w => w.vEmp1);
-  row(`고용안정·직업능력개발 (${gv('rEI2')}%)`,'원/인', w => w.vEmp2);
-  row('산재보험 (업무별 개별 적용)',           '원/인', w => w.vAcc);
-  row('법정부담금 계',                        '원/인', w => w.lSub, 'sub');
+  band('② 법정부담금 — 공통입력 시트의 요율을 참조', S.secVio);
+  RM.vRet  = row(`퇴직충당금 (${gv('rRet')}%)`,          '원/인', w => w.vRet);
+  RM.vPen  = row(`국민연금 (${gv('rNP')}%)`,             '원/인', w => w.vPen);
+  RM.vHlt  = row(`건강보험 (${gv('rHI')}%)`,             '원/인', w => w.vHlt);
+  RM.vLtc  = row(`장기요양보험 (${gv('rLT')}%)`,         '원/인', w => w.vLtc);
+  RM.vEmp1 = row(`실업급여 (${gv('rEI1')}%)`,            '원/인', w => w.vEmp1);
+  RM.vEmp2 = row(`고용안정·직업능력개발 (${gv('rEI2')}%)`,'원/인', w => w.vEmp2);
+  RM.vAcc  = row('산재보험 (업무별 개별 적용)',           '원/인', w => w.vAcc);
+  RM.lSub  = row('법정부담금 계',                        '원/인', w => w.lSub, 'sub');
 
-  band('③ 복리후생비 — 전 업무 공통', S.secGreen);
-  if (welfare.details.length) welfare.details.forEach(f => row(f.lbl, '원/인', () => f.amt, 'child'));
-  else                        row('(선택 항목 없음)', '원/인', () => 0, 'child');
-  row('복리후생비 계', '원/인', w => w.wfTotal, 'sub');
+  band('③ 복리후생비 — 공통입력 시트의 적용여부·금액을 참조', S.secGreen);
+  RM.wfItems = WF_ITEMS.map(w => row(w.lbl, '원/인', () => (gc(w.id) ? gv(w.id + '_v') : 0), 'child'));
+  RM.wfSub   = row('복리후생비 계', '원/인', w => w.wfTotal, 'sub');
 
-  band('④ 기타 고정비 — 월 합계를 전체 인원에 균등 배분', S.secAmber);
-  if (fixed.details.length) fixed.details.forEach(f =>
+  band('④ 기타 고정비 — 월 합계를 전체 인원에 균등 배분 (공통입력 시트 참조)', S.secAmber);
+  const fxDetails = fixed.details.length ? fixed.details : [{ name:'(입력 항목 없음)', amt:0 }];
+  RM.fxItems = fxDetails.map(f =>
     row(`${f.name || '미입력'} (월 ${fmtn(f.amt)}원)`, '원/인', () => totHead > 0 ? f.amt / totHead : 0, 'child'));
-  else                      row('(입력 항목 없음)', '원/인', () => 0, 'child');
-  row('기타고정비 계', '원/인', w => w.fxPerPerson, 'sub');
+  RM.fxSub = row('기타고정비 계', '원/인', w => w.fxPerPerson, 'sub');
 
   band('⑤ 청구 단가 산출', S.secBlue);
-  row('1인 순비용 (①+②+③+④)',            '원/인', w => w.netPer, 'sub');
-  row(`관리비 (${(mgmtR * 100).toFixed(2)}%)`, '원/인', w => w.mgmt);
-  row('1인 청구단가',                        '원/인', w => w.finPer, 'grand');
-  row('시간당 단가',                         '원/h',  w => w.hBill);
-  row('× 인원',                              '명',    w => w.headcount, 'data', NUM);
-  const lastRow = row('월 소계',             '원',    w => w.sub, 'grand');
+  RM.netPer     = row('1인 순비용 (①+②+③+④)',            '원/인', w => w.netPer, 'sub');
+  RM.mgmt       = row(`관리비 (${(mgmtR * 100).toFixed(2)}%)`, '원/인', w => w.mgmt);
+  RM.finPer     = row('1인 청구단가',                        '원/인', w => w.finPer, 'grand');
+  RM.hBill      = row('시간당 단가',                         '원/h',  w => w.hBill);
+  RM.headAgain  = row('× 인원',                              '명',    w => w.headcount, 'data', NUM);
+  RM.sub        = row('월 소계',                             '원',    w => w.sub, 'grand');
+  const lastRow = RM.sub;
+
+  // ── 수식 오버레이 — 업무별 열(C0..CT-1)에 실제 셀 참조 수식을 얹는다 ──
+  const lastCol = colL(CT - 1), firstCol = colL(C0);
+  const headRng = `${firstCol}${RM.head+1}:${lastCol}${RM.head+1}`;
+  const rateOf = key => xref('공통입력', cin[key], 1);   // 공통입력 시트 B열(값) 절대참조
+
+  for (let i = 0; i < n; i++) {
+    const c = C0 + i, cl = colL(c);
+    X.fx(RM.wBase, c, `${cl}${RM.rate+1}*${cl}${RM.hReg+1}`);
+    X.fx(RM.wOT,   c, `${cl}${RM.rate+1}*${cl}${RM.hOT+1}*0.5`);
+    X.fx(RM.wNt,   c, `${cl}${RM.rate+1}*${cl}${RM.hNt+1}*0.5`);
+    X.fx(RM.wHol,  c, `${cl}${RM.rate+1}*${cl}${RM.wkDays+1}*8*0.5`);
+    X.fx(RM.wSub,  c, `SUM(${cl}${RM.wBase+1}:${cl}${RM.wHol+1})`);
+
+    X.fx(RM.vRet,  c, `${cl}${RM.wSub+1}*${rateOf('rRet')}/100`);
+    X.fx(RM.vPen,  c, `${cl}${RM.wSub+1}*${rateOf('rNP')}/100`);
+    X.fx(RM.vHlt,  c, `${cl}${RM.wSub+1}*${rateOf('rHI')}/100`);
+    X.fx(RM.vLtc,  c, `${cl}${RM.wSub+1}*${rateOf('rLT')}/100`);
+    X.fx(RM.vEmp1, c, `${cl}${RM.wSub+1}*${rateOf('rEI1')}/100`);
+    X.fx(RM.vEmp2, c, `${cl}${RM.wSub+1}*${rateOf('rEI2')}/100`);
+    X.fx(RM.vAcc,  c, `${cl}${RM.wSub+1}*${cl}${RM.accRate+1}/100`);   // 산재율만 예외 — 업무별 개별값
+    X.fx(RM.lSub,  c, `SUM(${cl}${RM.vRet+1}:${cl}${RM.vAcc+1})`);
+
+    RM.wfItems.forEach((rowIdx, wi) => {
+      X.fx(rowIdx, c, `IF(${xref('공통입력', cin.wf[wi], 1)}=1,${xref('공통입력', cin.wf[wi], 2)},0)`);
+    });
+    X.fx(RM.wfSub, c, `SUM(${cl}${RM.wfItems[0]+1}:${cl}${RM.wfItems[RM.wfItems.length-1]+1})`);
+
+    RM.fxItems.forEach((rowIdx, fi) => {
+      X.fx(rowIdx, c, `${xref('공통입력', cin.fixed[fi], 1)}/$${colL(CT)}$${RM.head+1}`);
+    });
+    X.fx(RM.fxSub, c, `SUM(${cl}${RM.fxItems[0]+1}:${cl}${RM.fxItems[RM.fxItems.length-1]+1})`);
+
+    X.fx(RM.netPer, c, `${cl}${RM.wSub+1}+${cl}${RM.lSub+1}+${cl}${RM.wfSub+1}+${cl}${RM.fxSub+1}`);
+    X.fx(RM.mgmt,   c, `${cl}${RM.netPer+1}*${rateOf('mgmtRate')}/100`);
+    X.fx(RM.finPer, c, `${cl}${RM.netPer+1}+${cl}${RM.mgmt+1}`);
+    X.fx(RM.hBill,  c, `IF(${cl}${RM.hReg+1}>0,${cl}${RM.finPer+1}/${cl}${RM.hReg+1},0)`);
+    X.fx(RM.headAgain, c, `${cl}${RM.head+1}`);
+    X.fx(RM.sub,    c, `${cl}${RM.finPer+1}*${cl}${RM.head+1}`);
+  }
+
+  // ── 합계열(CT) 수식 — 단위(B열)에 따라 SUM / SUMPRODUCT(가중평균) 자동 결정 ──
+  Object.entries(rowUnit).forEach(([rowStr, unit]) => {
+    if (unit === '—') return;
+    const rr = +rowStr;
+    const rng = `${firstCol}${rr+1}:${lastCol}${rr+1}`;
+    const f = unit === '원/인'      ? `SUMPRODUCT(${rng},${headRng})`
+            : AVG_U.includes(unit) ? `SUMPRODUCT(${rng},${headRng})/$${colL(CT)}$${RM.head+1}`
+            : `SUM(${rng})`;
+    X.fx(rr, CT, f);
+  });
 
   // ── 주석 ──
   X.push(); X.h(X.rows - 1, 6);
@@ -1993,24 +2247,37 @@ function buildDetailSheet(base) {
     `※ 기타 고정비는 월 합계를 전체 인원(${totHead}명)으로 균등 배분한 금액입니다.`,
     "※ 전체 합계 열 — '원/인'은 값×인원의 합, '원'·'명'은 단순 합, 'h'·'일'·'%'·'원/h'는 인원 가중평균(회색 표기)입니다.",
     '※ 항목 순서가 곧 산식 순서입니다. 정렬하지 마세요 (단위 열 필터는 사용 가능).',
+    '※ 노란 배경 칸(근무조건 7개)만 직접 입력하세요 — 나머지는 전부 수식으로 자동 계산됩니다.',
   ].forEach(t => {
     const rr = X.push([t]); X.mg(rr,0,rr,NC-1); X.stR(rr,0,NC-1,S.note);
     X.h(rr, Math.max(15, Math.ceil(t.length / noteW) * 14));
   });
 
-  return X.build(
-    [{wch:24},{wch:8}, ...Array(n).fill({wch:wW}), {wch:17}],
-    { rowH:17,
-      filter : X.ref(hdrRow, 0, lastRow, NC-1),
-      margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } });
+  return {
+    ws: X.build(
+      [{wch:24},{wch:8}, ...Array(n).fill({wch:wW}), {wch:17}],
+      { rowH:17,
+        filter : X.ref(hdrRow, 0, lastRow, NC-1),
+        margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } }),
+    ref: { ...RM, C0, CT, n },
+  };
 }
 
 // ── 산정안 비교 시트 ──────────────────────────────────────
-function buildCmpSheet(cmp) {
-  const X = sheetCtx(), NC = 11, t = cmp.tot, R = v => Math.round(v);
+function buildCmpSheet(cmp, cin, det) {
+  const X = sheetCtx(), t = cmp.tot, R = v => Math.round(v), n = cmp.rows.length;
+  const D  = (r0, c0) => xref('산정내역', r0, c0);
+  const CN = key => xref('공통입력', cin[key], 1);
   const DS = { over:S.diffOver,  warn:S.diffWarn,  under:S.diffUnder,  eq:S.diffEq  }; // 우측정렬
   const DC = { over:S.diffOverC, warn:S.diffWarnC, under:S.diffUnderC, eq:S.diffEqC }; // 중앙정렬
   const P  = rt => (rt === null || rt === undefined) ? '' : rt * 100;
+  const SC0 = 1, SNC = SC0 + n;              // 업체 상세입력값 보조표(세로 전환) 열 폭
+  const NC = Math.max(12, SNC);              // 업무별비교(12열, 입력모드 포함)와 보조표 중 더 넓은 쪽
+  const judgeFx = (mineRef, diffRef) =>
+    `IF(${mineRef}<=0,IF(${diffRef}>0,"과다","동등"),`
+    + `IF(${diffRef}/${mineRef}>=0.15,"과다",`
+    + `IF(${diffRef}/${mineRef}>=0.05,"주의",`
+    + `IF(${diffRef}/${mineRef}<=-0.05,"절감","동등"))))`;
   let r;
 
   // ── 제목 ──
@@ -2023,7 +2290,7 @@ function buildCmpSheet(cmp) {
   X.st(r,0,S.infoLbl); X.st(r,1,S.infoVal);
   X.push();
 
-  // ── 종합 요약 ──
+  // ── 종합 요약 (수식은 아래서 업무별비교 전체합계 행을 그대로 참조해 일괄 부착) ──
   r = X.push(['종합 요약']);  X.mg(r,0,r,4); X.stR(r,0,4, S.secVio);
   r = X.push(['구분','내 산정','업체 산정','차이','차이율(%)']); X.stR(r,0,4, S.colHdrSm);
 
@@ -2032,23 +2299,26 @@ function buildCmpSheet(cmp) {
   const avgD  = mkDiff('u', '1인 평균', myAvg, vAvg);
   const headD = mkDiff('h', '인원',     t.mineHead, t.vHead);
 
+  const SR = {}; // 종합요약 각 행 인덱스
   [
-    ['전체 인원(명)',      t.mineHead,          t.vHead,          NUM, false, headD.level,    headD.ratio],
-    ['1인 평균 단가(원)',  R(myAvg),            R(vAvg),          WON, false, avgD.level,     avgD.ratio],
-    ['월 청구 총액(원)',   R(t.mineMonthly),    R(t.vMonthly),    WON, true,  t.monthlyLevel, t.monthlyRatio],
-    ['연간 환산 금액(원)', R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  t.monthlyLevel, t.monthlyRatio],
-  ].forEach(([lbl, mine, ven, z, grand, lv, rt]) => {
+    ['전체 인원(명)',      t.mineHead,          t.vHead,          NUM, false, headD.level,    headD.ratio, 'head'],
+    ['1인 평균 단가(원)',  R(myAvg),            R(vAvg),          WON, false, avgD.level,     avgD.ratio, 'avg'],
+    ['월 청구 총액(원)',   R(t.mineMonthly),    R(t.vMonthly),    WON, true,  t.monthlyLevel, t.monthlyRatio, 'monthly'],
+    ['연간 환산 금액(원)', R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  t.monthlyLevel, t.monthlyRatio, 'annual'],
+  ].forEach(([lbl, mine, ven, z, grand, lv, rt, key]) => {
     r = X.push([lbl, mine, ven, ven - mine, P(rt)]);
+    SR[key] = r;
     if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
     else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
     X.st(r,3, DS[lv], z); X.st(r,4, DS[lv], PCT);
   });
 
   // 월 차이 = 단가 효과 + 인원 효과
-  [['차이 요인 · 단가 효과(원)', t.priceEffect, '(업체 단가 − 내 단가) × 내 인원'],
-   ['차이 요인 · 인원 효과(원)', t.headEffect,  '(업체 인원 − 내 인원) × 업체 단가']]
-  .forEach(([lbl, val, note]) => {
+  [['차이 요인 · 단가 효과(원)', t.priceEffect, '(업체 단가 − 내 단가) × 내 인원', 'price'],
+   ['차이 요인 · 인원 효과(원)', t.headEffect,  '(업체 인원 − 내 인원) × 업체 단가', 'headEff']]
+  .forEach(([lbl, val, note, key]) => {
     r = X.push([lbl, '', '', R(val), note]);
+    SR[key] = r;
     X.mg(r,0,r,2); X.stR(r,0,2, S.sumLbl);
     X.st(r,3, DS[val > 0 ? 'over' : val < 0 ? 'under' : 'eq'], WON);
     X.st(r,4, S.infoVal);
@@ -2056,20 +2326,23 @@ function buildCmpSheet(cmp) {
 
   X.push();
 
-  // ── 업무별 비교 ──
+  // ── 업무별 비교 (12번째 열 '입력모드' — 항목별비교 마스킹에 씀) ──
   r = X.push(['업무별 비교']); X.mg(r,0,r,NC-1); X.stR(r,0,NC-1, S.secBlue);
-  const hdrRow = X.push(['업무명','교대형태','내 인원','업체 인원','내 1인단가','업체 1인단가','단가 차이','내 월소계','업체 월소계','월 차이','차이율(%)']);
+  const hdrRow = X.push(['업무명','교대형태','내 인원','업체 인원','내 1인단가','업체 1인단가','단가 차이','내 월소계','업체 월소계','월 차이','차이율(%)','입력모드']);
   // 열군을 색으로 갈라 어느 쪽 값인지 즉시 구분되게 한다 (틀고정을 못 쓰는 대신)
   X.stR(hdrRow, 0, 1,  S.colHdr);
   for (const c of [2, 4, 7])  X.st(hdrRow, c, S.colHdrMine);   // 내 산정
   for (const c of [3, 5, 8])  X.st(hdrRow, c, S.colHdrVen);    // 업체
-  for (const c of [6, 9, 10]) X.st(hdrRow, c, S.colHdr);       // 차이
+  for (const c of [6, 9, 10, 11]) X.st(hdrRow, c, S.colHdr);   // 차이·모드
 
+  const cmpRows = [];
   cmp.rows.forEach((x, i) => {
     const e = i % 2, txt = e?S.dataTxt1:S.dataTxt0, num = e?S.dataNum1:S.dataNum0, sub = e?S.subNum1:S.subNum0;
     r = X.push([x.name, x.shiftLbl, x.mineHead, x.vHead,
                 R(x.mineUnit), R(x.vUnit), R(x.unitDiff),
-                R(x.mineTot), R(x.vTot), R(x.totDiff), P(x.totRatio)]);
+                R(x.mineTot), R(x.vTot), R(x.totDiff), P(x.totRatio),
+                x.mode === 'detail' ? '상세' : '간편']);
+    cmpRows.push(r);
     X.st(r,0,txt); X.st(r,1,txt);
     X.st(r,2,num,NUM); X.st(r,3,num,NUM);
     X.st(r,4,sub,WON); X.st(r,5,sub,WON);
@@ -2077,16 +2350,19 @@ function buildCmpSheet(cmp) {
     X.st(r,7,num,WON); X.st(r,8,num,WON);
     X.st(r,9,  DS[x.filled ? x.totLevel : 'eq'], WON);
     X.st(r,10, DS[x.filled ? x.totLevel : 'eq'], PCT);
+    X.st(r,11, txt);
   });
 
   const lastDataRow = X.rows - 1;   // 자동필터에서 합계 행을 제외하기 위한 경계
   r = X.push(['전체 합계','', t.mineHead, t.vHead, '', '', '',
-              R(t.mineMonthly), R(t.vMonthly), R(t.monthlyDiff), P(t.monthlyRatio)]);
+              R(t.mineMonthly), R(t.vMonthly), R(t.monthlyDiff), P(t.monthlyRatio), '']);
+  const totalRow = r;
   X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
   X.st(r,2,S.totNum,NUM); X.st(r,3,S.totNum,NUM);
   X.stR(r,4,6,S.totEmpty);
   X.st(r,7,S.totNum,WON); X.st(r,8,S.totNum,WON);
   X.st(r,9,S.totNum,WON); X.st(r,10,S.totNum,PCT);
+  X.st(r,11,S.totEmpty);
 
   X.push();
 
@@ -2094,7 +2370,10 @@ function buildCmpSheet(cmp) {
   r = X.push([`항목별 비교 — 상세 입력 ${t.coverage.detail}/${t.coverage.live}개 업무 기준 (전체 인원 · 월)`]);
   X.mg(r,0,r,5); X.stR(r,0,5, S.secGreen);
 
-  if (!t.coverage.detail) {
+  const showItems = t.coverage.detail > 0;
+  const itemRows = [];
+  let itemTotalRow = -1;
+  if (!showItems) {
     r = X.push(['업무를 상세 모드로 입력하면 항목별 비교가 채워집니다.']);
     X.mg(r,0,r,5); X.stR(r,0,5, S.infoVal);
   } else {
@@ -2103,6 +2382,7 @@ function buildCmpSheet(cmp) {
     t.items.forEach((it, i) => {
       const e = i % 2;
       r = X.push([it.lbl, R(it.mine), R(it.vendor), R(it.diff), P(it.ratio), CMP_LBL[it.level]]);
+      itemRows.push({ row:r, key: it.key });
       X.st(r,0, e?S.dataTxt1:S.dataTxt0);
       X.st(r,1, e?S.dataNum1:S.dataNum0, WON);
       X.st(r,2, e?S.dataNum1:S.dataNum0, WON);
@@ -2113,18 +2393,144 @@ function buildCmpSheet(cmp) {
     const sm = t.items.reduce((a, i) => ({ m:a.m + i.mine, v:a.v + i.vendor }), { m:0, v:0 });
     const td = mkDiff('t', '합계', sm.m, sm.v);
     r = X.push(['합계', R(td.mine), R(td.vendor), R(td.diff), P(td.ratio), CMP_LBL[td.level]]);
+    itemTotalRow = r;
     X.st(r,0,S.totTxt);
     X.st(r,1,S.totNum,WON); X.st(r,2,S.totNum,WON); X.st(r,3,S.totNum,WON);
     X.st(r,4,S.totNum,PCT); X.st(r,5,S.totEmpty);
   }
 
+  X.push(); X.h(X.rows - 1, 6);
+
+  // ── 업체 상세입력값 — 노란 배경 칸만 직접 입력 (세로 전환: 항목=행, 업무=열) ──
+  X.band('업체 상세입력값 — 노란 배경 칸만 직접 입력 (입력모드는 내보내기 시점에 고정됨)', NC, S.secAmber, 20);
+  const subHdr = X.push(['항목', ...cmp.rows.map(x => x.name)]);
+  X.stR(subHdr, 0, SNC-1, S.colHdr); X.h(subHdr, 24);
+
+  const SUB = {};
+  const subRow = (label, pickFn, z0 = WON) => {
+    const vals = cmp.rows.map(pickFn);
+    const rr = X.push([label, ...vals]);
+    X.st(rr, 0, S.itmTxt0);
+    for (let c = SC0; c < SNC; c++) X.st(rr, c, S.inputNum0, z0);
+    X.h(rr, 18);
+    return rr;
+  };
+  SUB.head   = subRow('업체 인원(명)',           x => x.vHead, NUM);
+  SUB.unit   = subRow('1인 단가 — 간편모드(원)', x => x.mode === 'simple' ? R(x.vSupply) : 0);
+  SUB.base   = subRow('기본급(원)',              x => x.mode === 'detail' ? gv(`v_base_${x.id}`)   : 0);
+  SUB.ot     = subRow('연장수당(원)',            x => x.mode === 'detail' ? gv(`v_ot_${x.id}`)     : 0);
+  SUB.nt     = subRow('야간수당(원)',            x => x.mode === 'detail' ? gv(`v_nt_${x.id}`)     : 0);
+  SUB.hol    = subRow('휴일수당(원)',            x => x.mode === 'detail' ? gv(`v_hol_${x.id}`)    : 0);
+  SUB.ins    = subRow('4대보험(원)',             x => x.mode === 'detail' ? gv(`v_ins_${x.id}`)    : 0);
+  SUB.ret    = subRow('퇴직충당금(원)',          x => x.mode === 'detail' ? gv(`v_ret_${x.id}`)    : 0);
+  SUB.wf     = subRow('복리후생비(원)',          x => x.mode === 'detail' ? gv(`v_wf_${x.id}`)     : 0);
+  SUB.fx     = subRow('기타고정비(원)',          x => x.mode === 'detail' ? gv(`v_fx_${x.id}`)     : 0);
+  SUB.mgmt   = subRow('일반관리비(원)',          x => x.mode === 'detail' ? gv(`v_mgmt_${x.id}`)   : 0);
+  SUB.profit = subRow('이윤(원)',                x => x.mode === 'detail' ? gv(`v_profit_${x.id}`) : 0);
+  SUB.vat    = subRow('부가세(원)',              x => gv(`v_vat_${x.id}`));
+
+  // ── 수식 오버레이 ──
+  function mineExpr(c2) { return `(${D(det.finPer,c2)}*(1+${CN('vatOn')}*${CN('vatRate')}/100))`; }
+  // ★ 항상 괄호로 감싼 채 반환 — 이 값은 곧잘 뒤에 "*인원"이 붙는데, 덧셈식을 괄호 없이
+  //   이어붙이면 곱셈이 부가세 항에만 걸려버리는(연산자 우선순위) 실수를 원천 차단한다.
+  function vExpr(mode, c) {
+    if (mode === 'detail') {
+      const fs = ['base','ot','nt','hol','ins','ret','wf','fx','mgmt','profit'].map(k => A1(SUB[k], c));
+      return `(SUM(${fs.join(',')})+${CN('vatOn')}*${A1(SUB.vat, c)})`;
+    }
+    return `(${A1(SUB.unit, c)}+${CN('vatOn')}*${A1(SUB.vat, c)})`;
+  }
+
+  if (det && n) {
+    cmp.rows.forEach((x, i) => {
+      const row = cmpRows[i], c2 = det.C0 + i, c = SC0 + i;
+      X.fx(row, 2, D(det.head, c2));
+      X.fx(row, 3, A1(SUB.head, c));
+      X.fx(row, 4, `ROUND(${mineExpr(c2)},0)`);
+      X.fx(row, 5, `ROUND(${vExpr(x.mode, c)},0)`);
+      X.fx(row, 6, `${colL(5)}${row+1}-${colL(4)}${row+1}`);
+      X.fx(row, 7, `ROUND(${mineExpr(c2)}*${colL(2)}${row+1},0)`);
+      X.fx(row, 8, `ROUND(${vExpr(x.mode,c)}*${colL(3)}${row+1},0)`);
+      X.fx(row, 9, `${colL(8)}${row+1}-${colL(7)}${row+1}`);
+      X.fx(row, 10, `IF(${colL(7)}${row+1}>0,(${colL(8)}${row+1}-${colL(7)}${row+1})/${colL(7)}${row+1}*100,"")`);
+    });
+
+    const a = cmpRows[0], b = cmpRows[cmpRows.length-1];
+    const rng = c => `${colL(c)}${a+1}:${colL(c)}${b+1}`;
+    X.fx(totalRow, 2, `SUMIF(${rng(5)},">0",${rng(2)})`);
+    X.fx(totalRow, 3, `SUMIF(${rng(5)},">0",${rng(3)})`);
+    X.fx(totalRow, 7, `SUMIF(${rng(5)},">0",${rng(7)})`);
+    X.fx(totalRow, 8, `SUMIF(${rng(5)},">0",${rng(8)})`);
+    X.fx(totalRow, 9, `${colL(8)}${totalRow+1}-${colL(7)}${totalRow+1}`);
+    X.fx(totalRow, 10, `IF(${colL(7)}${totalRow+1}>0,(${colL(8)}${totalRow+1}-${colL(7)}${totalRow+1})/${colL(7)}${totalRow+1}*100,"")`);
+
+    // 종합 요약 — 업무별비교 전체합계 행을 그대로 참조 (로직 중복 금지)
+    X.fx(SR.head, 1, `${colL(2)}${totalRow+1}`);
+    X.fx(SR.head, 2, `${colL(3)}${totalRow+1}`);
+    X.fx(SR.avg,  1, `ROUND(IF(${colL(2)}${totalRow+1}>0,${colL(7)}${totalRow+1}/${colL(2)}${totalRow+1},0),0)`);
+    X.fx(SR.avg,  2, `ROUND(IF(${colL(3)}${totalRow+1}>0,${colL(8)}${totalRow+1}/${colL(3)}${totalRow+1},0),0)`);
+    X.fx(SR.monthly, 1, `${colL(7)}${totalRow+1}`);
+    X.fx(SR.monthly, 2, `${colL(8)}${totalRow+1}`);
+    X.fx(SR.annual,  1, `ROUND(${colL(7)}${totalRow+1}*12,0)`);
+    X.fx(SR.annual,  2, `ROUND(${colL(8)}${totalRow+1}*12,0)`);
+    [SR.head, SR.avg, SR.monthly, SR.annual].forEach(rr => {
+      X.fx(rr, 3, `${colL(2)}${rr+1}-${colL(1)}${rr+1}`);
+      X.fx(rr, 4, `IF(${colL(1)}${rr+1}>0,${colL(3)}${rr+1}/${colL(1)}${rr+1}*100,"")`);
+    });
+    X.fx(SR.price,   3, `ROUND(SUMPRODUCT((${rng(5)}>0)*(${rng(5)}-${rng(4)})*${rng(2)}),0)`);
+    X.fx(SR.headEff, 3, `ROUND(SUMPRODUCT((${rng(5)}>0)*(${rng(3)}-${rng(2)})*${rng(5)}),0)`);
+
+    // 항목별 비교 — 산정내역(업무=열)·업체상세(업무=열)를 업무별비교(업무=행) 마스크로 항별 명시 합산
+    // (두 세로표를 가로표 마스크와 SUMPRODUCT로 직접 곱하면 배열 방향이 어긋나 #VALUE! 이므로
+    //  업무 개수만큼 IF(...)*값*인원 항을 만들어 SUM 한다 — n이 작아 항 개수는 문제되지 않는다)
+    if (showItems) {
+      const MINE = {
+        base: c2 => D(det.wBase, c2), ot: c2 => D(det.wOT, c2), nt: c2 => D(det.wNt, c2), hol: c2 => D(det.wHol, c2),
+        ins:  c2 => `${D(det.lSub,c2)}-${D(det.vRet,c2)}`, ret: c2 => D(det.vRet, c2),
+        wf:   c2 => D(det.wfSub, c2), fx: c2 => D(det.fxSub, c2), mgmt: c2 => D(det.mgmt, c2),
+        vat:  c2 => `${D(det.finPer,c2)}*${CN('vatRate')}/100`,
+      };
+      const VEND = {
+        base: c => A1(SUB.base,c), ot: c => A1(SUB.ot,c), nt: c => A1(SUB.nt,c), hol: c => A1(SUB.hol,c),
+        ins:  c => A1(SUB.ins,c), ret: c => A1(SUB.ret,c), wf: c => A1(SUB.wf,c), fx: c => A1(SUB.fx,c),
+        mgmt: c => `(${A1(SUB.mgmt,c)}+${A1(SUB.profit,c)})`, vat: c => A1(SUB.vat, c),
+      };
+      itemRows.forEach(({ row, key }) => {
+        const mineTerms = [], vendTerms = [];
+        cmp.rows.forEach((x, i) => {
+          const rr = cmpRows[i], c2 = det.C0 + i, c = SC0 + i;
+          const mask = `IF(${colL(5)}${rr+1}>0,IF(${colL(11)}${rr+1}="상세",1,0),0)`;
+          mineTerms.push(`${mask}*(${MINE[key](c2)})*${colL(2)}${rr+1}`);
+          vendTerms.push(`${mask}*(${VEND[key](c)})*${colL(3)}${rr+1}`);
+        });
+        X.fx(row, 1, `ROUND(${mineTerms.join('+')},0)`);
+        X.fx(row, 2, `ROUND(${vendTerms.join('+')},0)`);
+        X.fx(row, 3, `${colL(2)}${row+1}-${colL(1)}${row+1}`);
+        X.fx(row, 4, `IF(${colL(1)}${row+1}>0,${colL(3)}${row+1}/${colL(1)}${row+1}*100,"")`);
+        X.fx(row, 5, judgeFx(`${colL(1)}${row+1}`, `${colL(3)}${row+1}`));
+      });
+      if (itemTotalRow >= 0) {
+        const first = itemRows[0].row, last = itemRows[itemRows.length-1].row;
+        X.fx(itemTotalRow, 1, `SUM(${colL(1)}${first+1}:${colL(1)}${last+1})`);
+        X.fx(itemTotalRow, 2, `SUM(${colL(2)}${first+1}:${colL(2)}${last+1})`);
+        X.fx(itemTotalRow, 3, `${colL(2)}${itemTotalRow+1}-${colL(1)}${itemTotalRow+1}`);
+        X.fx(itemTotalRow, 4, `IF(${colL(1)}${itemTotalRow+1}>0,${colL(3)}${itemTotalRow+1}/${colL(1)}${itemTotalRow+1}*100,"")`);
+        X.fx(itemTotalRow, 5, judgeFx(`${colL(1)}${itemTotalRow+1}`, `${colL(3)}${itemTotalRow+1}`));
+      }
+    }
+  }
+
   X.h(0, 32); X.h(hdrRow, 30);
 
-  return X.build(
-    [{wch:18},{wch:10},{wch:9},{wch:10},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:14},{wch:11}],
-    { rowH:18,
-      filter : X.ref(hdrRow, 0, lastDataRow, NC-1),
-      margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } });
+  const baseCols = [{wch:18},{wch:10},{wch:9},{wch:10},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:14},{wch:11},{wch:9}];
+  return {
+    ws: X.build(
+      [...baseCols, ...Array(Math.max(0, NC - baseCols.length)).fill({wch:13})],
+      { rowH:18,
+        filter : X.ref(hdrRow, 0, lastDataRow, 11),
+        margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } }),
+    ref: { cmpRows, totalRow, SR, SUB, SC0, n },
+  };
 }
 
 // ================================================================
