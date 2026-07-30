@@ -211,7 +211,10 @@
 
     <!-- 복리후생비 (공통) -->
     <div class="panel">
-      <div class="sec-hdr">🎁 복리후생비 <span style="font-size:10px;font-weight:400;color:#a09080;">전 업무 공통 · 1인 월 기준 (원)</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">🎁 복리후생비 <span style="font-size:10px;font-weight:400;color:#a09080;">전 업무 공통 · 1인 월 기준 (원)</span></div>
+        <button onclick="addWelfare()" style="font-size:11px;background:#f0e2cc;color:#a07040;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:600;">+ 추가</button>
+      </div>
       <div style="display:flex;flex-direction:column;gap:5px;">
         <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_meal" checked onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_meal" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">식대</label><input type="text" inputmode="numeric" id="wf_meal_v" value="200,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
         <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_trans" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_trans" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">교통비</label><input type="text" inputmode="numeric" id="wf_trans_v" value="100,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
@@ -220,6 +223,7 @@
         <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_health" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_health" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">건강검진</label><input type="text" inputmode="numeric" id="wf_health_v" value="30,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
         <div style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="wf_condo" onchange="calculate()" style="width:14px;height:14px;cursor:pointer;"><label for="wf_condo" style="font-size:12px;color:#4a3828;width:56px;cursor:pointer;">경조사비</label><input type="text" inputmode="numeric" id="wf_condo_v" value="20,000" oninput="fmtMoney(this);calculate()" class="inp" style="flex:1;"></div>
       </div>
+      <div id="wfCustomRows" style="display:flex;flex-direction:column;gap:5px;margin-top:5px;"></div>
     </div>
 
     <!-- 기타고정비 + 관리비율 -->
@@ -502,7 +506,7 @@ const CMP_TH  = { warn:0.05, over:0.15 };  // ±5% 동등 / +5~15% 주의 / +15%
 const CMP_LBL = { over:'과다', warn:'주의', eq:'동등', under:'절감' };
 const VAT_DEF = 10;
 
-let wkCnt = 0, fxCnt = 0;
+let wkCnt = 0, fxCnt = 0, wfCnt = 0;
 let pieChart = null, barChart = null, cmpChart = null;
 let activeTab = 'calc';
 
@@ -744,15 +748,46 @@ function collectFixed() {
   return { total, details };
 }
 
+// 복리후생비 — 고정 6항목(체크박스로 켜고 끔) + 사용자 추가 항목(명칭·금액 직접 입력, 켜져있는 상태로 고정)
+function addWelfare(p = {}) {
+  const id = ++wfCnt;
+  const div = document.createElement('div');
+  div.id = `wfRow_${id}`;
+  div.style.cssText = 'display:flex;align-items:center;gap:5px;';
+  div.innerHTML = `
+    <input type="text" placeholder="항목명" id="wfName_${id}" value="${esc(p.name || '')}" oninput="calculate()"
+      style="flex:1;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;outline:none;background:#fdf9f3;">
+    <input type="text" inputmode="numeric" placeholder="금액" id="wfAmt_${id}" value="${fmtn(p.amt || 0)}" oninput="fmtMoney(this);calculate()"
+      style="width:90px;padding:4px 7px;border:1px solid #ddd0bc;border-radius:5px;font-size:12px;text-align:right;outline:none;background:#fdf9f3;">
+    <button onclick="removeWelfare(${id})" style="color:#c06060;background:none;border:none;font-size:16px;cursor:pointer;padding:0 3px;line-height:1;">✕</button>
+  `;
+  $('wfCustomRows').appendChild(div);
+  calculate();
+}
+
+function removeWelfare(id) { $(`wfRow_${id}`)?.remove(); calculate(); }
+
+function collectWelfareCustom() {
+  const items = [];
+  for (let i = 1; i <= wfCnt; i++) {
+    if (!$(`wfRow_${i}`)) continue;
+    items.push({ name: $(`wfName_${i}`)?.value || '미입력', amt: gv(`wfAmt_${i}`) });
+  }
+  return items;
+}
+
+// 고정 6항목 + 사용자 추가 항목을 하나의 목록으로 합친다 — 화면 계산과 엑셀 출력이 이 함수 하나를 공유
+function allWelfareItems() {
+  const fixed  = WF_ITEMS.map(w => ({ lbl: w.lbl, on: gc(w.id) ? 1 : 0, amt: gv(w.id + '_v') }));
+  const custom = collectWelfareCustom().map(f => ({ lbl: f.name, on: 1, amt: f.amt }));
+  return fixed.concat(custom);
+}
+
 function collectWelfare() {
   let total = 0;
   const details = [];
-  for (const w of WF_ITEMS) {
-    if (gc(w.id)) {
-      const amt = gv(w.id + '_v');
-      total += amt;
-      details.push({ lbl: w.lbl, amt });
-    }
+  for (const it of allWelfareItems()) {
+    if (it.on) { total += it.amt; details.push({ lbl: it.lbl, amt: it.amt }); }
   }
   return { total, details };
 }
@@ -1451,7 +1486,8 @@ function resetAll() {
   if (!confirm('모든 입력값을 초기화하시겠습니까?')) return;
   $('workList').innerHTML = '';
   $('fixedRows').innerHTML = '';
-  wkCnt = 0; fxCnt = 0;
+  $('wfCustomRows').innerHTML = '';
+  wkCnt = 0; fxCnt = 0; wfCnt = 0;
   clearVendor();
   for (const [k, v] of Object.entries(DEFAULT_RATES)) { if ($(k)) $(k).value = v; }
   for (const w of WF_ITEMS) { if ($(w.id)) $(w.id).checked=(w.id==='wf_meal'); }
@@ -1771,10 +1807,9 @@ function buildCommonInputSheet(base) {
   X.stR(r, 0, 2, S.colHdrSm); X.h(r, 20);
   CIN.wf = [];
   let wfCached = 0;
-  WF_ITEMS.forEach((w, i) => {
-    const on = gc(w.id) ? 1 : 0, amt = gv(w.id + '_v');
-    wfCached += on * amt;
-    const rr = X.push([w.lbl, on, amt]);
+  allWelfareItems().forEach((it, i) => {
+    wfCached += it.on * it.amt;
+    const rr = X.push([it.lbl, it.on, it.amt]);
     const e = i % 2;
     X.st(rr, 0, e ? S.itmTxt1 : S.itmTxt0);
     X.st(rr, 1, S.inputNum0, NUM);
@@ -2169,7 +2204,7 @@ function buildDetailSheet(base, cin) {
   RM.lSub  = row('법정부담금 계',                        '원/인', w => w.lSub, 'sub');
 
   band('③ 복리후생비 — 공통입력 시트의 적용여부·금액을 참조', S.secGreen);
-  RM.wfItems = WF_ITEMS.map(w => row(w.lbl, '원/인', () => (gc(w.id) ? gv(w.id + '_v') : 0), 'child'));
+  RM.wfItems = allWelfareItems().map(it => row(it.lbl, '원/인', () => (it.on ? it.amt : 0), 'child'));
   RM.wfSub   = row('복리후생비 계', '원/인', w => w.wfTotal, 'sub');
 
   band('④ 기타 고정비 — 월 합계를 전체 인원에 균등 배분 (공통입력 시트 참조)', S.secAmber);
@@ -2569,9 +2604,10 @@ function collectState() {
   for (const w of WF_ITEMS) {
     welfare[w.id] = { checked: gc(w.id), value: gv(w.id + '_v') };
   }
+  const welfareCustom = collectWelfareCustom();
   return {
     rates: { rNP: gv('rNP'), rHI: gv('rHI'), rLT: gv('rLT'), rEI1: gv('rEI1'), rEI2: gv('rEI2'), rAcc: gv('rAcc'), rRet: gv('rRet'), mgmtRate: gv('mgmtRate') },
-    welfare, fixed, works,
+    welfare, welfareCustom, fixed, works,
     vendor: collectVendorState(),
   };
 }
@@ -2610,8 +2646,9 @@ function applyVendorState(v) {
 function applyState(state) {
   $('workList').innerHTML = '';
   $('fixedRows').innerHTML = '';
+  $('wfCustomRows').innerHTML = '';
   $('cmpBody').innerHTML = '';
-  wkCnt = 0; fxCnt = 0;
+  wkCnt = 0; fxCnt = 0; wfCnt = 0;
 
   if (state.rates) {
     ['rNP','rHI','rLT','rEI1','rEI2','rAcc','rRet','mgmtRate'].forEach(k => { if (state.rates[k] !== undefined && $(k)) $(k).value = state.rates[k]; });
@@ -2623,6 +2660,9 @@ function applyState(state) {
       if ($(w.id)) $(w.id).checked = sv.checked;
       if ($(w.id + '_v')) $(w.id + '_v').value = fmtn(sv.value);
     }
+  }
+  if (state.welfareCustom) {
+    for (const w of state.welfareCustom) addWelfare(w);
   }
   if (state.fixed) {
     for (const f of state.fixed) {
