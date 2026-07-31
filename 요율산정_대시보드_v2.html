@@ -61,9 +61,9 @@
     .sb-block-btn:active { cursor:grabbing; }
 
     /* 탭 네비게이션 */
-    .tab-bar   { display:flex; gap:2px; background:#7a5c3e; padding:0 20px; box-shadow:0 2px 6px rgba(80,50,20,.18); }
-    .tab-btn   { background:#8d6d4c; color:#e8d8c0; border:none; padding:9px 22px; font-size:13.5px; font-weight:700; cursor:pointer; border-radius:8px 8px 0 0; font-family:inherit; display:flex; align-items:center; gap:7px; }
-    .tab-btn:hover  { background:#9a7a58; color:#fff; }
+    .tab-bar   { display:flex; gap:2px; background:#33524c; padding:0 20px; box-shadow:0 2px 6px rgba(20,45,40,.18); }
+    .tab-btn   { background:#47645d; color:#cfe0da; border:none; padding:9px 22px; font-size:13.5px; font-weight:700; cursor:pointer; border-radius:8px 8px 0 0; font-family:inherit; display:flex; align-items:center; gap:7px; }
+    .tab-btn:hover  { background:#567870; color:#fff; }
     .tab-btn.active { background:#f5ede0; color:#4a3828; }
     .tab-badge { font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:9px; background:#fdf9f3; }
 
@@ -120,10 +120,10 @@
 <body>
 
 <!-- HEADER -->
-<div style="background:#7a5c3e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(80,50,20,.25);">
+<div style="background:#33524c;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(20,45,40,.25);">
   <div>
     <div style="font-size:18px;font-weight:700;">협력업체 요율산정 시스템</div>
-    <div style="font-size:11px;color:#d4b896;margin-top:2px;">업무별 교대근무 · 법정수당 · 4대보험 · 복리후생비 자동 반영 · <b style="color:#f0dcc0;">2026년 법정 기준</b></div>
+    <div style="font-size:11px;color:#bcd6cd;margin-top:2px;">업무별 교대근무 · 법정수당 · 4대보험 · 복리후생비 자동 반영 · <b style="color:#e4f0ea;">2026년 법정 기준</b></div>
   </div>
   <div class="no-print" style="display:flex;gap:8px;">
     <button onclick="exportExcel()" style="background:#4d7a5a;color:white;border:none;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;">📥 엑셀 다운로드</button>
@@ -152,7 +152,7 @@
         <input type="text" id="slSaveName" placeholder="저장 이름 (예: 경비·미화 2025년 1분기)"
           style="flex:1;padding:6px 10px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;"
           onkeydown="if(event.key==='Enter')doSave()">
-        <button onclick="doSave()" id="slSaveBtn" style="background:#7a5c3e;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">💾 저장</button>
+        <button onclick="doSave()" id="slSaveBtn" style="background:#33524c;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">💾 저장</button>
       </div>
     </div>
     <div style="padding:12px 18px 14px;flex:1;overflow-y:auto;">
