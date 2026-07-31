@@ -53,6 +53,13 @@
     .rstbtn:hover { color:#4a3828; background:#f0e8d8; }
     .sum-card { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; text-align:center; }
 
+    /* 근무 시프트 캘린더 빌더 */
+    .sb-preset-btn { background:#fdf9f3; border:1px solid #cfc0a8; color:#5a3828; padding:4px 10px; border-radius:5px; font-size:11px; font-weight:600; cursor:pointer; }
+    .sb-preset-btn:hover { background:#f0e8d8; }
+    .sb-block-btn { background:#fdf9f3; border:1px solid #cfc0a8; color:#4a3828; padding:4px 9px; border-radius:5px; font-size:11px; cursor:grab; }
+    .sb-block-btn:hover { background:#f0e8d8; }
+    .sb-block-btn:active { cursor:grabbing; }
+
     /* 탭 네비게이션 */
     .tab-bar   { display:flex; gap:2px; background:#7a5c3e; padding:0 20px; box-shadow:0 2px 6px rgba(80,50,20,.18); }
     .tab-btn   { background:#8d6d4c; color:#e8d8c0; border:none; padding:9px 22px; font-size:13.5px; font-weight:700; cursor:pointer; border-radius:8px 8px 0 0; font-family:inherit; display:flex; align-items:center; gap:7px; }
@@ -157,6 +164,69 @@
       <button onclick="$('jsonImport').click()" style="background:#6a8aa0;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📥 JSON 가져오기</button>
       <input type="file" id="jsonImport" accept=".json,application/json" style="display:none;" onchange="importJSON(this)">
       <span style="font-size:10px;color:#9a8878;">현재 입력 상태를 파일로 백업 · 다른 PC/브라우저로 이동</span>
+    </div>
+  </div>
+</div>
+
+<!-- SHIFT BUILDER MODAL -->
+<div id="shiftBuilderModal" onclick="if(event.target===this)closeShiftBuilder()" style="display:none;position:fixed;inset:0;background:rgba(60,40,20,0.55);z-index:2100;align-items:center;justify-content:center;">
+  <div style="background:#fdf9f3;border-radius:14px;width:660px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(60,30,10,.35);border:1px solid #d8c8a8;">
+    <div style="padding:14px 18px;border-bottom:1px solid #e8d8c0;display:flex;justify-content:space-between;align-items:center;background:#f5ede0;border-radius:14px 14px 0 0;">
+      <div style="font-size:15px;font-weight:700;color:#4a3828;">🗓 근무 시프트 직접 만들기</div>
+      <button onclick="closeShiftBuilder()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#7a6a58;line-height:1;padding:2px 6px;">✕</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e8d8c0;background:#faf5ee;display:flex;flex-wrap:wrap;gap:9px;align-items:center;">
+      <label style="font-size:12px;color:#5a3828;font-weight:700;">반복 주기</label>
+      <select id="sbWeeks" onchange="sbSetWeeks(this.value)" style="padding:4px 8px;border:1px solid #ddd0bc;border-radius:6px;font-size:12px;outline:none;background:#fdf9f3;">
+        <option value="1">1주</option><option value="2">2주</option><option value="3">3주</option>
+        <option value="4">4주</option><option value="5">5주</option><option value="6">6주</option>
+      </select>
+      <label style="font-size:11px;color:#7a6a58;display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" id="sbWeeklyRest" onchange="sbRecalc()"> 주휴수당 가산(주 8h)
+      </label>
+      <div style="width:1px;height:18px;background:#ddd0bc;"></div>
+      <span style="font-size:11px;color:#7a6a58;">프리셋으로 시작:</span>
+      <button type="button" onclick="sbApplyPreset('day')" class="sb-preset-btn">주간고정</button>
+      <button type="button" onclick="sbApplyPreset('shift2')" class="sb-preset-btn">2교대</button>
+      <button type="button" onclick="sbApplyPreset('shift3')" class="sb-preset-btn">3교대</button>
+      <button type="button" onclick="sbApplyPreset('shift43')" class="sb-preset-btn">4조3교대</button>
+      <button type="button" onclick="sbApplyPreset('alternate')" class="sb-preset-btn">격일제</button>
+      <button type="button" onclick="sbApplyPreset('blank')" class="sb-preset-btn">전체휴무</button>
+    </div>
+    <div style="padding:12px 18px;overflow-y:auto;flex:1;">
+      <div id="sbGrid"></div>
+      <div style="margin-top:10px;padding:8px 10px;background:#f0e9dc;border-radius:6px;">
+        <div style="font-size:10.5px;color:#7a6050;margin-bottom:6px;">선택한 날짜에 적용 — 캘린더에서 날짜를 먼저 클릭해 선택(여러 개 가능)하거나, 버튼을 캘린더 칸으로 바로 드래그해서 놓아도 됩니다</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'off')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('off')" class="sb-block-btn">휴무</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'day')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('day')" class="sb-block-btn">주간(08~16)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'eve')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('eve')" class="sb-block-btn">오후(16~24)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'night')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('night')" class="sb-block-btn">야간(00~08)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'alt')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('alt')" class="sb-block-btn">24시간(격일)</button>
+        </div>
+        <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-top:6px;">
+          <select id="sbCustomStart" style="padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:11px;outline:none;background:#fdf9f3;"></select>
+          <span style="font-size:11px;color:#7a6a58;">~</span>
+          <select id="sbCustomEnd" style="padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:11px;outline:none;background:#fdf9f3;"></select>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'custom')" ondragend="sbDragEnd(event)" onclick="sbApplyCustom()" class="sb-block-btn" style="white-space:nowrap;">직접입력 적용</button>
+          <span style="flex:1;"></span>
+          <button type="button" onclick="sbSelectAll()" style="font-size:10.5px;color:#5a7aaa;background:none;border:none;cursor:pointer;text-decoration:underline;white-space:nowrap;">전체선택</button>
+          <button type="button" onclick="sbSelectNone()" style="font-size:10.5px;color:#a09080;background:none;border:none;cursor:pointer;text-decoration:underline;white-space:nowrap;">선택해제</button>
+        </div>
+      </div>
+    </div>
+    <div style="padding:10px 18px;border-top:1px solid #e8d8c0;background:#faf5ee;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;border-radius:0 0 14px 14px;">
+      <div style="font-size:12px;color:#4a3828;display:flex;gap:14px;flex-wrap:wrap;">
+        <span>소정 <b id="sbResReg" style="color:#a07040;">0h</b></span>
+        <span>연장 <b id="sbResOT" style="color:#a07040;">0h</b></span>
+        <span>야간 <b id="sbResNt" style="color:#a07040;">0h</b></span>
+        <span>주말 <b id="sbResWk" style="color:#a07040;">0일</b></span>
+        <span style="font-size:10px;color:#a09080;">(월평균 환산)</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" onclick="closeShiftBuilder()" style="background:#c8bca8;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">취소</button>
+        <button type="button" onclick="sbApply()" style="background:#4d7a5a;color:white;border:none;padding:6px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">✓ 적용하기</button>
+      </div>
     </div>
   </div>
 </div>
@@ -459,6 +529,121 @@ const SHIFT_BASIS = {
   },
 };
 
+// 라벨 조회 통일 — SHIFT_DEF 5종 + 캘린더로 직접 만든 'custom' 라벨
+const SHIFT_LABELS = { ...Object.fromEntries(Object.entries(SHIFT_DEF).map(([k, v]) => [k, v.label])), custom: '커스텀(달력)' };
+
+// 주휴수당 가산분(주 8h → 월평균 환산, 반올림) — 주간고정 프리셋의 209−174=35 와 동일한 값
+const WEEKLY_REST_HOURS = Math.round(8 * 365 / 7 / 12);
+
+// ================================================================
+// 근무 시프트 캘린더 빌더 — N주 반복 캘린더를 그리면 월평균 소정/연장/야간/주말로 환산
+// ================================================================
+// 패턴: { weeks, days:[하루당 null | {start:'HH:MM',end:'HH:MM'}, ...] (길이 weeks*7, 일~토 반복) }
+// end<=start 는 익일로 넘어가는 것으로 간주(예: 22:00→06:00)
+function hhmmToMin(s) { const [h, m] = s.split(':').map(Number); return h * 60 + m; }
+
+function blockDuration(start, end) {
+  let s = hhmmToMin(start), e = hhmmToMin(end);
+  if (e <= s) e += 1440;
+  return (e - s) / 60;
+}
+
+// 22:00~06:00 야간대와의 겹침 시간(익일 wrap 안전)
+function nightOverlap(start, end) {
+  let s = hhmmToMin(start), e = hhmmToMin(end);
+  if (e <= s) e += 1440;
+  const win = (a, b) => Math.max(0, Math.min(e, b) - Math.max(s, a));
+  return (win(1320, 1800) + win(1320 - 1440, 1800 - 1440)) / 60;
+}
+
+function computePatternHours(pattern) {
+  const { weeks, days, weeklyRest, regularHoursPerWeek } = pattern;
+  let regular = 0, night = 0, weekendCount = 0, overtime = 0;
+  for (let w = 0; w < weeks; w++) {
+    let weekDailyExcess = 0, weekTotal = 0;
+    for (let d = 0; d < 7; d++) {
+      const blk = days[w * 7 + d];
+      if (!blk) continue;
+      const dur = blockDuration(blk.start, blk.end);
+      regular += dur;
+      weekTotal += dur;
+      weekDailyExcess += Math.max(0, dur - 8);
+      night += nightOverlap(blk.start, blk.end);
+      if (d === 0 || d === 6) weekendCount++;
+    }
+    overtime += Math.max(weekDailyExcess, weekTotal - 40, 0); // 일 8h 초과분과 주 40h 초과분 중 큰 쪽(이중계산 방지)
+  }
+  if (weeklyRest) regular += 8 * weeks; // 주휴수당 가산(주 8h) — 사용자가 캘린더에서 직접 체크 가능
+  // 프리셋 전용 예외: 실제 캘린더 물리시간과 무관하게 "통상임금 산정기준"(주 48h)을 쓰는 교대(격일제 등).
+  // 사용자가 직접 그리는 캘린더에는 이 값이 없으므로 항상 물리 합계가 쓰인다.
+  if (regularHoursPerWeek != null) regular = regularHoursPerWeek * weeks;
+  const factor = (365 / 7 / 12) / weeks; // 월평균 주수로 환산
+  return {
+    hoursRegular:  Math.round(regular  * factor),
+    hoursOvertime: Math.round(overtime * factor),
+    hoursNight:    Math.round(night    * factor),
+    weekendDays:   Math.round(weekendCount * factor),
+  };
+}
+
+// 캘린더 패턴 빌더 헬퍼 — spec: { dayIdx(0~weeks*7-1): {start,end} }
+function sbDays(weeks, spec) {
+  const days = Array(weeks * 7).fill(null);
+  for (const [k, v] of Object.entries(spec)) days[+k] = v;
+  return days;
+}
+
+// 주간/오후/야간이 겹치지 않고 24h를 딱 3등분하도록 구성(08~16/16~24/00~08) — shift43의 A/B/C조와 동일 경계
+const SB_BLOCKS = {
+  day:   { start:'08:00', end:'16:00', label:'주간' },
+  eve:   { start:'16:00', end:'00:00', label:'오후' },
+  night: { start:'00:00', end:'08:00', label:'야간' },
+  alt:   { start:'10:00', end:'02:00', label:'24시간(격일)' }, // 실근로 16h 환산(익일 wrap)
+};
+
+// SB_BLOCKS는 label을 포함한 "메뉴용" 객체라 저장 데이터에는 {start,end}만 뽑아서 쓴다(sbApplyBlock과 동일 원칙)
+const nb = key => ({ start: SB_BLOCKS[key].start, end: SB_BLOCKS[key].end });
+
+// 프리셋 5종 — SHIFT_BASIS에 이미 문서화된 시각(예: 2교대 06~18/18~06)을 그대로 사용해
+// 캘린더 빌더 버튼을 눌렀을 때 SHIFT_DEF 캐노니컬 값과 최대한 근접하도록 설계됨(허용오차 내).
+const SHIFT_PATTERNS = {
+  day: {
+    weeks: 1, weeklyRest: true,
+    days: sbDays(1, { 1:nb('day'), 2:nb('day'), 3:nb('day'), 4:nb('day'), 5:nb('day') }),
+  },
+  shift2: {
+    weeks: 4,
+    days: sbDays(4, {
+      2:{start:'08:00',end:'20:00'}, 4:{start:'20:00',end:'08:00'}, 5:{start:'20:00',end:'08:00'},
+      9:{start:'08:00',end:'20:00'}, 11:{start:'20:00',end:'08:00'}, 12:{start:'20:00',end:'08:00'},
+      16:{start:'08:00',end:'20:00'}, 18:{start:'20:00',end:'08:00'}, 19:{start:'20:00',end:'08:00'}, 20:{start:'20:00',end:'08:00'},
+      23:{start:'08:00',end:'20:00'}, 25:{start:'20:00',end:'08:00'}, 26:{start:'20:00',end:'08:00'},
+    }),
+  },
+  shift3: {
+    // 08~16/16~24/00~08 로 겹침 없이 3등분 — SB_BLOCKS(주간/오후/야간)와 동일 경계라 그대로 재사용
+    weeks: 3,
+    days: sbDays(3, {
+      1:nb('day'), 2:nb('day'), 3:nb('day'), 4:nb('day'), 5:nb('day'),
+      8:nb('eve'), 9:nb('eve'), 10:nb('eve'), 11:nb('eve'), 12:nb('eve'),
+      15:nb('night'), 16:nb('night'), 17:nb('night'), 18:nb('night'), 19:nb('night'),
+    }),
+  },
+  shift43: {
+    weeks: 4,
+    days: sbDays(4, {
+      1:{start:'08:00',end:'16:00'}, 2:{start:'08:00',end:'16:00'}, 3:{start:'08:00',end:'16:00'}, 4:{start:'08:00',end:'16:00'}, 5:{start:'16:00',end:'00:00'},
+      8:{start:'08:00',end:'16:00'}, 9:{start:'08:00',end:'16:00'}, 10:{start:'08:00',end:'16:00'}, 11:{start:'08:00',end:'16:00'}, 12:{start:'16:00',end:'00:00'},
+      15:{start:'08:00',end:'16:00'}, 16:{start:'08:00',end:'16:00'}, 17:{start:'08:00',end:'16:00'}, 18:{start:'00:00',end:'08:00'}, 19:{start:'00:00',end:'08:00'},
+      21:{start:'08:00',end:'16:00'}, 22:{start:'16:00',end:'00:00'}, 23:{start:'16:00',end:'00:00'}, 24:{start:'00:00',end:'08:00'}, 25:{start:'00:00',end:'08:00'}, 26:{start:'00:00',end:'08:00'},
+    }),
+  },
+  alternate: {
+    weeks: 2, regularHoursPerWeek: 48, // day 프리셋과 동일한 통상임금 산정기준(주 48h) — SHIFT_BASIS 문구가 동일
+    days: sbDays(2, { 0:nb('alt'), 2:nb('alt'), 4:nb('alt'), 6:nb('alt'), 8:nb('alt'), 10:nb('alt'), 12:nb('alt') }),
+  },
+};
+
 const WK_COLORS = ['#7a9fcc','#70b898','#d4a060','#d07878','#9880cc','#d87aaa','#5ab8cc','#90c070'];
 
 const WF_ITEMS = [
@@ -617,6 +802,9 @@ function addWork(p) {
   p = p || { name:'', shiftType:'day', hourlyRate:MIN_WAGE, headcount:1, hoursRegular:209, hoursOvertime:0, hoursNight:0, weekendDays:0 };
   // 산재율: 저장본에 값이 있으면 사용, 없으면(구버전 저장 포함) 전역 기본값
   const acc = (p.accidentRate !== undefined && p.accidentRate !== null) ? p.accidentRate : gv('rAcc');
+  // 주휴수당 가산 체크 상태: 저장본에 있으면 사용, 없으면(구버전 포함) 프리셋 기본값으로 추정(주간고정·격일제만 ON)
+  const defaultRest = (p.shiftType === 'day' || p.shiftType === 'alternate');
+  const restOn = (p.weeklyRest !== undefined && p.weeklyRest !== null) ? p.weeklyRest : defaultRest;
 
   const div = document.createElement('div');
   div.id = `work_${id}`;
@@ -634,6 +822,7 @@ function addWork(p) {
         <option value="shift3"    ${p.shiftType==='shift3'   ?'selected':''}>3교대</option>
         <option value="shift43"   ${p.shiftType==='shift43'  ?'selected':''}>4조3교대</option>
         <option value="alternate" ${p.shiftType==='alternate'?'selected':''}>격일제</option>
+        <option value="custom"    ${p.shiftType==='custom'   ?'selected':''}>커스텀(달력)</option>
       </select>
       <button onclick="removeWork(${id})" style="color:#c06060;background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;" title="삭제">✕</button>
     </div>
@@ -658,8 +847,14 @@ function addWork(p) {
     <div style="background:#f0e9dc;border-radius:5px;padding:7px 8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
         <div style="font-size:10px;color:#7a6050;font-weight:600;">월 근무시간 — 교대형태 선택 시 자동입력, 직접 수정 가능</div>
-        <button type="button" onclick="toggleShiftBasis(${id})" id="basisBtn_${id}" style="font-size:10px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;margin-left:6px;white-space:nowrap;">📋 산정 근거</button>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button type="button" onclick="toggleShiftBasis(${id})" id="basisBtn_${id}" style="font-size:10px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;white-space:nowrap;">📋 산정 근거</button>
+          <button type="button" onclick="openShiftBuilder(${id})" style="font-size:10px;color:#5a7aaa;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;white-space:nowrap;">🗓 근무표 직접 만들기</button>
+        </div>
       </div>
+      <label id="wRestRow_${id}" style="display:${p.shiftType==='custom'?'none':'flex'};align-items:center;gap:5px;font-size:10.5px;color:#7a6050;margin-bottom:5px;cursor:pointer;">
+        <input type="checkbox" id="wRest_${id}" ${restOn ? 'checked' : ''} onchange="onWeeklyRestToggle(${id})"> 주휴수당 가산(주 8h, 소정근로에 ±${WEEKLY_REST_HOURS}h)
+      </label>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;">
         <div><label style="font-size:10px;color:#7a6a58;">소정 (h)</label><input type="number" id="wReg_${id}" value="${p.hoursRegular}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#7a6a58;">연장 (h)</label><input type="number" id="wOT_${id}" value="${p.hoursOvertime}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
@@ -669,6 +864,7 @@ function addWork(p) {
       <div id="shiftBasis_${id}" style="display:none;"></div>
     </div>
   `;
+  if (p.customPattern) div.dataset.pattern = JSON.stringify(p.customPattern);
   $('workList').appendChild(div);
   calculate();
 }
@@ -679,15 +875,245 @@ function removeWork(id) {
 }
 
 function onShiftChange(id) {
-  const def = SHIFT_DEF[$(`wShift_${id}`)?.value];
-  if (!def) return;
-  $(`wReg_${id}`).value = def.regular;
-  $(`wOT_${id}`).value  = def.overtime;
-  $(`wNt_${id}`).value  = def.night;
-  const basisEl = $(`shiftBasis_${id}`);
-  if (basisEl && basisEl.style.display !== 'none') {
-    basisEl.innerHTML = getShiftBasisHTML($(`wShift_${id}`)?.value);
+  const shiftType = $(`wShift_${id}`)?.value;
+  const def = SHIFT_DEF[shiftType];
+  if (def) {
+    $(`wReg_${id}`).value = def.regular;
+    $(`wOT_${id}`).value  = def.overtime;
+    $(`wNt_${id}`).value  = def.night;
+    if ($(`wRest_${id}`)) $(`wRest_${id}`).checked = (shiftType === 'day' || shiftType === 'alternate');
+    const basisEl = $(`shiftBasis_${id}`);
+    if (basisEl && basisEl.style.display !== 'none') {
+      basisEl.innerHTML = getShiftBasisHTML(shiftType);
+    }
+  } else if (shiftType === 'custom') {
+    // 저장된 캘린더 패턴이 있으면(가장 최근 적용본) 화면 4칸부터 그 값으로 먼저 맞춰둔다 —
+    // 팝업에서 취소를 눌러도 직전 프리셋 숫자가 아니라 마지막 적용값이 그대로 남도록.
+    const saved = $(`work_${id}`)?.dataset.pattern;
+    if (saved) {
+      try {
+        const r = computePatternHours(JSON.parse(saved));
+        $(`wReg_${id}`).value = r.hoursRegular;
+        $(`wOT_${id}`).value  = r.hoursOvertime;
+        $(`wNt_${id}`).value  = r.hoursNight;
+        $(`wWk_${id}`).value  = r.weekendDays;
+      } catch (e) { /* 손상된 저장값 — 기존 값 유지 */ }
+    }
+    openShiftBuilder(id);
   }
+  const restRow = $(`wRestRow_${id}`);
+  if (restRow) restRow.style.display = (shiftType === 'custom') ? 'none' : 'flex';
+  calculate();
+}
+
+// 소정근로 필드에 주휴 가산분(±WEEKLY_REST_HOURS)만 가감 — 프리셋 재계산이 아니라
+// 사용자가 이미 손댄 값 위에서도 그대로 델타 적용(껐다 켜면 정확히 원복)
+function onWeeklyRestToggle(id) {
+  const delta = gc(`wRest_${id}`) ? WEEKLY_REST_HOURS : -WEEKLY_REST_HOURS;
+  $(`wReg_${id}`).value = Math.max(0, gv(`wReg_${id}`) + delta);
+  calculate();
+}
+
+// ================================================================
+// 근무 시프트 캘린더 빌더 — 팝업 상태 및 조작 함수
+// ================================================================
+const SB_DOW = ['일', '월', '화', '수', '목', '금', '토'];
+let sbWorkId = null;
+let sbDraft = null;      // { weeks, weeklyRest, days:[...] } — 팝업에서 편집 중인 임시 패턴
+let sbSelected = new Set();
+
+// 직접입력 시작~종료 드롭다운 — 브라우저 로케일에 따라 오전/오후로 바뀌는 <input type="time">을 피하고
+// 위쪽 프리셋 블록(08~16 등)과 동일하게 항상 24시간 표기만 나오도록 <select>를 30분 단위로 직접 채운다.
+function sbBuildTimeOptions() {
+  let opts = '<option value="">--:--</option>';
+  for (let m = 0; m < 24 * 60; m += 30) {
+    const hh = String(Math.floor(m / 60)).padStart(2, '0');
+    const mm = String(m % 60).padStart(2, '0');
+    opts += `<option value="${hh}:${mm}">${hh}:${mm}</option>`;
+  }
+  $('sbCustomStart').innerHTML = opts;
+  $('sbCustomEnd').innerHTML = opts;
+}
+
+function sbBlockLabel(blk) {
+  if (!blk) return '휴무';
+  for (const b of Object.values(SB_BLOCKS)) if (b.start === blk.start && b.end === blk.end) return b.label;
+  return `${blk.start}~${blk.end}`;
+}
+function sbBlockColor(blk) {
+  const l = sbBlockLabel(blk);
+  return { '휴무':'#e8e0d0', '주간':'#cfe0f5', '오후':'#f5e0c0', '야간':'#d8cdf0', '24시간(격일)':'#f0c8c8' }[l] || '#c5e8d8';
+}
+
+// 프리셋(SHIFT_PATTERNS 엔트리)을 편집용 초안으로 복제 — regularHoursPerWeek 같은 선택 필드도 함께 복사
+function sbDraftFromPreset(preset) {
+  const d = { weeks: preset.weeks, weeklyRest: !!preset.weeklyRest, days: preset.days.slice() };
+  if (preset.regularHoursPerWeek != null) d.regularHoursPerWeek = preset.regularHoursPerWeek;
+  return d;
+}
+
+function openShiftBuilder(id) {
+  sbWorkId = id;
+  const saved = $(`work_${id}`)?.dataset.pattern;
+  if (saved) {
+    try { sbDraft = JSON.parse(saved); } catch (e) { sbDraft = null; }
+  } else {
+    sbDraft = null;
+  }
+  if (!sbDraft) {
+    const preset = SHIFT_PATTERNS[$(`wShift_${id}`)?.value];
+    sbDraft = preset ? sbDraftFromPreset(preset) : { weeks: 1, weeklyRest: false, days: sbDays(1, {}) };
+  }
+  sbSelected = new Set();
+  $('sbWeeks').value = sbDraft.weeks;
+  $('sbWeeklyRest').checked = !!sbDraft.weeklyRest;
+  sbRenderGrid();
+  sbRecalc();
+  $('shiftBuilderModal').style.display = 'flex';
+}
+
+function closeShiftBuilder() { $('shiftBuilderModal').style.display = 'none'; }
+
+function sbSetWeeks(n) {
+  n = Math.max(1, Math.min(6, parseInt(n) || 1));
+  const newDays = Array(n * 7).fill(null);
+  for (let i = 0; i < Math.min(sbDraft.days.length, newDays.length); i++) newDays[i] = sbDraft.days[i];
+  sbDraft.weeks = n;
+  sbDraft.days = newDays;
+  sbSelected = new Set();
+  sbRenderGrid();
+  sbRecalc();
+}
+
+function sbApplyPreset(key) {
+  if (key === 'blank') {
+    sbDraft = { weeks: sbDraft.weeks, weeklyRest: false, days: Array(sbDraft.weeks * 7).fill(null) };
+  } else {
+    const preset = SHIFT_PATTERNS[key];
+    if (!preset) return;
+    sbDraft = sbDraftFromPreset(preset);
+  }
+  sbSelected = new Set();
+  $('sbWeeks').value = sbDraft.weeks;
+  $('sbWeeklyRest').checked = !!sbDraft.weeklyRest;
+  sbRenderGrid();
+  sbRecalc();
+}
+
+function sbToggleCell(idx) {
+  if (sbSelected.has(idx)) sbSelected.delete(idx); else sbSelected.add(idx);
+  sbRenderGrid();
+}
+function sbSelectAll()  { sbSelected = new Set(sbDraft.days.map((_, i) => i)); sbRenderGrid(); }
+function sbSelectNone() { sbSelected = new Set(); sbRenderGrid(); }
+
+// blockKey('off'|SB_BLOCKS 키) → 저장용 {start,end}|null. label 은 표시 전용이라 여기서 뺀다.
+function sbBlockValue(blockKey) {
+  if (blockKey === 'off') return null;
+  const src = SB_BLOCKS[blockKey];
+  return src ? { start: src.start, end: src.end } : null;
+}
+// 직접입력 두 칸을 읽어 검증 — 미입력이면 안내 후 null
+function sbReadCustomTime() {
+  const start = $('sbCustomStart').value, end = $('sbCustomEnd').value;
+  if (!start || !end) { alert('시작·종료 시각을 입력하세요.'); return null; }
+  return { start, end };
+}
+// 클릭-적용/드래그-드롭 두 경로가 공유하는 실제 반영 로직
+function sbApplyToIndices(indices, blk) {
+  for (const idx of indices) sbDraft.days[idx] = blk;
+  sbSelected = new Set();
+  sbRenderGrid();
+  sbRecalc();
+}
+
+function sbApplyBlock(blockKey) {
+  if (!sbSelected.size) { alert('먼저 캘린더에서 날짜를 선택하세요.'); return; }
+  sbApplyToIndices([...sbSelected], sbBlockValue(blockKey));
+}
+
+function sbApplyCustom() {
+  if (!sbSelected.size) { alert('먼저 캘린더에서 날짜를 선택하세요.'); return; }
+  const blk = sbReadCustomTime();
+  if (!blk) return;
+  sbApplyToIndices([...sbSelected], blk);
+}
+
+// 버튼 → 캘린더 칸 드래그앤드롭
+function sbDragStart(e, blockKey) {
+  e.dataTransfer.setData('text/plain', blockKey);
+  e.dataTransfer.effectAllowed = 'copy';
+  e.currentTarget.style.opacity = '0.5';
+}
+function sbDragEnd(e) { e.currentTarget.style.opacity = '1'; }
+
+function sbCellDragOver(e) {
+  e.preventDefault(); // 이게 있어야 drop 이벤트가 발생함
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  e.currentTarget.style.outline = '2px solid #5a7aaa';
+}
+function sbCellDragLeave(e) {
+  e.currentTarget.style.outline = e.currentTarget.dataset.outline || '';
+}
+function sbCellDrop(e, idx) {
+  e.preventDefault();
+  e.currentTarget.style.outline = e.currentTarget.dataset.outline || '';
+  const blockKey = e.dataTransfer.getData('text/plain');
+  if (!blockKey) return;
+  let blk;
+  if (blockKey === 'custom') {
+    blk = sbReadCustomTime();
+    if (!blk) return; // 미입력 — 이미 안내 표시됨
+  } else {
+    blk = sbBlockValue(blockKey);
+  }
+  // 드롭한 칸이 현재 다중선택에 포함돼 있으면 선택 전체에, 아니면 그 칸 하나에만 적용
+  const targets = sbSelected.has(idx) ? [...sbSelected] : [idx];
+  sbApplyToIndices(targets, blk);
+}
+
+function sbRenderGrid() {
+  let html = '<div style="display:grid;grid-template-columns:36px repeat(7,1fr);gap:3px;font-size:10.5px;">';
+  html += '<div></div>' + SB_DOW.map(d => `<div style="text-align:center;font-weight:700;color:#7a6050;">${d}</div>`).join('');
+  for (let w = 0; w < sbDraft.weeks; w++) {
+    html += `<div style="display:flex;align-items:center;justify-content:center;font-weight:700;color:#9b7050;">${w + 1}주</div>`;
+    for (let d = 0; d < 7; d++) {
+      const idx = w * 7 + d;
+      const blk = sbDraft.days[idx];
+      const sel = sbSelected.has(idx);
+      const outline = sel ? '2px solid #4a3828' : '1px solid #ddd0bc';
+      html += `<div onclick="sbToggleCell(${idx})" ondragover="sbCellDragOver(event)" ondragleave="sbCellDragLeave(event)" ondrop="sbCellDrop(event,${idx})"
+        data-outline="${outline}" style="cursor:pointer;border-radius:4px;padding:5px 2px;text-align:center;background:${sbBlockColor(blk)};outline:${outline};outline-offset:-1px;">
+        <div style="font-weight:700;color:#4a3828;">${sbBlockLabel(blk)}</div>
+        ${blk ? `<div style="font-size:9px;color:#7a6a58;">${blk.start}~${blk.end}</div>` : ''}
+      </div>`;
+    }
+  }
+  html += '</div>';
+  $('sbGrid').innerHTML = html;
+}
+
+function sbRecalc() {
+  sbDraft.weeklyRest = gc('sbWeeklyRest');
+  const r = computePatternHours(sbDraft);
+  setTxt('sbResReg', r.hoursRegular + 'h');
+  setTxt('sbResOT',  r.hoursOvertime + 'h');
+  setTxt('sbResNt',  r.hoursNight + 'h');
+  setTxt('sbResWk',  r.weekendDays + '일');
+  sbDraft._result = r;
+  return r;
+}
+
+function sbApply() {
+  const r = sbDraft._result || sbRecalc();
+  const id = sbWorkId;
+  $(`wReg_${id}`).value = r.hoursRegular;
+  $(`wOT_${id}`).value  = r.hoursOvertime;
+  $(`wNt_${id}`).value  = r.hoursNight;
+  $(`wWk_${id}`).value  = r.weekendDays;
+  $(`wShift_${id}`).value = 'custom';
+  $(`work_${id}`).dataset.pattern = JSON.stringify({ weeks: sbDraft.weeks, weeklyRest: !!sbDraft.weeklyRest, days: sbDraft.days });
+  closeShiftBuilder();
   calculate();
 }
 
@@ -909,7 +1335,7 @@ function renderWorkTable(results, totHead, grandTot) {
           <div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;"></div>
           <span style="font-weight:600;">${esc(r.name)}</span>
         </div>
-        <span style="text-align:center;color:#7a6a58;">${SHIFT_DEF[r.shiftType]?.label||r.shiftType}</span>
+        <span style="text-align:center;color:#7a6a58;">${SHIFT_LABELS[r.shiftType]||r.shiftType}</span>
         <span style="text-align:center;">${r.headcount}명</span>
         <span style="text-align:right;">${fmtn(r.hourlyRate)}</span>
         <span style="text-align:right;font-weight:600;color:#a07040;">${fmt(r.finPer)}</span>
@@ -939,7 +1365,7 @@ function renderAccordion(results, rates) {
           <div style="display:flex;align-items:center;gap:7px;">
             <div style="width:10px;height:10px;border-radius:50%;background:${col};"></div>
             <span style="font-size:13px;font-weight:700;">${esc(r.name)}</span>
-            <span style="font-size:11px;color:#7a6a58;">${r.headcount}명 · ${SHIFT_DEF[r.shiftType]?.label||''} · 시급 ${fmtn(r.hourlyRate)}원</span>
+            <span style="font-size:11px;color:#7a6a58;">${r.headcount}명 · ${SHIFT_LABELS[r.shiftType]||''} · 시급 ${fmtn(r.hourlyRate)}원</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:13px;font-weight:700;color:#a07040;">1인 ${fmt(r.finPer)}</span>
@@ -1102,7 +1528,7 @@ function compareAll(base) {
       mode === 'detail' ? gv(`v_vat_${id}`) : NaN));
 
     return {
-      id, name: r.name || `업무 ${id}`, shiftLbl: SHIFT_DEF[r.shiftType]?.label || '',
+      id, name: r.name || `업무 ${id}`, shiftLbl: SHIFT_LABELS[r.shiftType] || '',
       mode, mineHead: r.headcount, vHead, headDiff: vHead - r.headcount,
       mineSupply: r.finPer, vSupply, mineMgmt: r.mgmt,
       mineVat: r.finPer * vatRate,
@@ -1224,7 +1650,7 @@ function reconcileCmpRows(results) {
   for (const r of results) {
     if (!$(`cmpRow_${r.id}`)) body.insertAdjacentHTML('beforeend', buildCmpRowHTML(r));
     setTxt(`cmpName_${r.id}`,   r.name || `업무 ${r.id}`);
-    setTxt(`cmpShift_${r.id}`,  SHIFT_DEF[r.shiftType]?.label || '');
+    setTxt(`cmpShift_${r.id}`,  SHIFT_LABELS[r.shiftType] || '');
     setTxt(`cmpMyHead_${r.id}`, `${r.headcount}명`);
   }
   $('cmpEmpty').style.display = results.length ? 'none' : 'block';
@@ -1484,6 +1910,7 @@ function clearVendor(ask) {
 // ================================================================
 function resetAll() {
   if (!confirm('모든 입력값을 초기화하시겠습니까?')) return;
+  closeShiftBuilder();
   $('workList').innerHTML = '';
   $('fixedRows').innerHTML = '';
   $('wfCustomRows').innerHTML = '';
@@ -1524,7 +1951,7 @@ function copyResult() {
     `퇴직충당금 ${gv('rRet')}% | 국민연금 ${gv('rNP')}% | 건강보험 ${gv('rHI')}% | 장기요양 ${gv('rLT')}% | 실업급여 ${gv('rEI1')}% | 고용안정·직업능력개발 ${gv('rEI2')}% | 관리비율 ${gv('mgmtRate')}%`,
     '',
     '[업무별 결과]',
-    ...results.map(r => `${r.name} | ${SHIFT_DEF[r.shiftType]?.label||''} | ${r.headcount}명 | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
+    ...results.map(r => `${r.name} | ${SHIFT_LABELS[r.shiftType]||''} | ${r.headcount}명 | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
     '',
     `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
   ];
@@ -1936,7 +2363,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   const workRows = [];
   results.forEach((w, i) => {
     const e = i % 2;
-    r = X.push([w.name || `업무 ${w.id}`, SHIFT_DEF[w.shiftType]?.label || w.shiftType,
+    r = X.push([w.name || `업무 ${w.id}`, SHIFT_LABELS[w.shiftType] || w.shiftType,
                 w.headcount, R(w.finPer), R(w.sub), grandTot > 0 ? w.sub / grandTot : 0]);
     workRows.push(r);
     X.st(r,0, e?S.dataTxt1:S.dataTxt0);
@@ -2175,7 +2602,7 @@ function buildDetailSheet(base, cin) {
   const hdrRow = X.push(['구분 / 항목', '단위', ...results.map(w => w.name || `업무 ${w.id}`), '전체 합계']);
   X.stR(hdrRow, 0, NC-1, S.colHdr); X.h(hdrRow, 30);
   const RM = {};
-  RM.shift = row('교대형태', '—', w => SHIFT_DEF[w.shiftType]?.label || w.shiftType);
+  RM.shift = row('교대형태', '—', w => SHIFT_LABELS[w.shiftType] || w.shiftType);
 
   band('근무 조건 — 노란 배경 칸만 직접 입력', S.secBlue);
   RM.rate    = row('시급',     '원/h', w => w.hourlyRate,       'data', WON, true);
@@ -2583,6 +3010,7 @@ function collectState() {
   const works = [];
   for (let i = 1; i <= wkCnt; i++) {
     if (!$(`work_${i}`)) continue;
+    const pattern = $(`work_${i}`).dataset.pattern;
     works.push({
       name:          $(`wName_${i}`)?.value || '',
       shiftType:     $(`wShift_${i}`)?.value || 'day',
@@ -2593,6 +3021,8 @@ function collectState() {
       hoursOvertime: gv(`wOT_${i}`),
       hoursNight:    gv(`wNt_${i}`),
       weekendDays:   gv(`wWk_${i}`),
+      weeklyRest:    gc(`wRest_${i}`),
+      customPattern: pattern ? JSON.parse(pattern) : null,
     });
   }
   const fixed = [];
@@ -2644,6 +3074,7 @@ function applyVendorState(v) {
 }
 
 function applyState(state) {
+  closeShiftBuilder();
   $('workList').innerHTML = '';
   $('fixedRows').innerHTML = '';
   $('wfCustomRows').innerHTML = '';
@@ -2787,6 +3218,8 @@ function importJSON(input) {
 // ================================================================
 $('minWageAlert').textContent =
   `⚠️ 일부 업무의 시급이 ${BASE_YEAR}년 법정 최저시급(${MIN_WAGE.toLocaleString('ko-KR')}원)보다 낮습니다.`;
+
+sbBuildTimeOptions();
 
 addWork({
   name: '경비', shiftType: 'alternate', hourlyRate: MIN_WAGE,
