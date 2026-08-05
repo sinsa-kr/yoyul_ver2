@@ -1,0 +1,222 @@
+{
+  "app": "rateCalc",
+  "version": 2,
+  "baseYear": 2026,
+  "exportedAt": "2026-07-31T02:03:44.407Z",
+  "data": {
+    "rates": {
+      "rNP": 4.75,
+      "rHI": 3.595,
+      "rLT": 0.4724,
+      "rEI1": 0.9,
+      "rEI2": 0.25,
+      "rAcc": 0.7,
+      "rRet": 8.33,
+      "mgmtRate": 10
+    },
+    "welfare": {
+      "wf_meal": {
+        "checked": true,
+        "value": 200000
+      },
+      "wf_trans": {
+        "checked": true,
+        "value": 100000
+      },
+      "wf_uni": {
+        "checked": true,
+        "value": 60000
+      },
+      "wf_bonus": {
+        "checked": true,
+        "value": 83333
+      },
+      "wf_health": {
+        "checked": true,
+        "value": 30000
+      },
+      "wf_condo": {
+        "checked": true,
+        "value": 20000
+      }
+    },
+    "welfareCustom": [
+      {
+        "name": "안전보호구 지급비",
+        "amt": 25000
+      }
+    ],
+    "fixed": [
+      {
+        "name": "통근버스 운영비",
+        "amt": 800000
+      },
+      {
+        "name": "작업복 세탁비",
+        "amt": 300000
+      },
+      {
+        "name": "안전교육비",
+        "amt": 150000
+      },
+      {
+        "name": "현장 관리사무소 운영비",
+        "amt": 200000
+      }
+    ],
+    "works": [
+      {
+        "name": "경비",
+        "shiftType": "alternate",
+        "hourlyRate": 11000,
+        "headcount": 4,
+        "accidentRate": 0.7,
+        "hoursRegular": 209,
+        "hoursOvertime": 120,
+        "hoursNight": 60,
+        "weekendDays": 0,
+        "weeklyRest": true,
+        "customPattern": null
+      },
+      {
+        "name": "환경미화",
+        "shiftType": "day",
+        "hourlyRate": 10320,
+        "headcount": 3,
+        "accidentRate": 0.9,
+        "hoursRegular": 209,
+        "hoursOvertime": 0,
+        "hoursNight": 0,
+        "weekendDays": 0,
+        "weeklyRest": true,
+        "customPattern": null
+      },
+      {
+        "name": "지게차·자재운반",
+        "shiftType": "shift2",
+        "hourlyRate": 11500,
+        "headcount": 6,
+        "accidentRate": 1.8,
+        "hoursRegular": 174,
+        "hoursOvertime": 52,
+        "hoursNight": 78,
+        "weekendDays": 0,
+        "weeklyRest": false,
+        "customPattern": null
+      },
+      {
+        "name": "설비보전",
+        "shiftType": "shift3",
+        "hourlyRate": 12000,
+        "headcount": 4,
+        "accidentRate": 1.3,
+        "hoursRegular": 174,
+        "hoursOvertime": 0,
+        "hoursNight": 58,
+        "weekendDays": 0,
+        "weeklyRest": false,
+        "customPattern": null
+      },
+      {
+        "name": "구내식당 조리보조",
+        "shiftType": "day",
+        "hourlyRate": 10320,
+        "headcount": 2,
+        "accidentRate": 0.7,
+        "hoursRegular": 209,
+        "hoursOvertime": 0,
+        "hoursNight": 0,
+        "weekendDays": 0,
+        "weeklyRest": true,
+        "customPattern": null
+      }
+    ],
+    "vendor": {
+      "name": "그린파트너스(주)",
+      "vatOn": true,
+      "vatRate": 10,
+      "works": [
+        {
+          "mode": "simple",
+          "head": 4,
+          "unit": 5951000,
+          "base": 0,
+          "ot": 0,
+          "nt": 0,
+          "hol": 0,
+          "ins": 0,
+          "ret": 0,
+          "wf": 0,
+          "fx": 0,
+          "mgmt": 0,
+          "profit": 0,
+          "vat": 595100
+        },
+        {
+          "mode": "simple",
+          "head": 3,
+          "unit": 3552000,
+          "base": 0,
+          "ot": 0,
+          "nt": 0,
+          "hol": 0,
+          "ins": 0,
+          "ret": 0,
+          "wf": 0,
+          "fx": 0,
+          "mgmt": 0,
+          "profit": 0,
+          "vat": 355200
+        },
+        {
+          "mode": "detail",
+          "head": 6,
+          "unit": 4670000,
+          "base": 2700000,
+          "ot": 350000,
+          "nt": 280000,
+          "hol": 0,
+          "ins": 450000,
+          "ret": 230000,
+          "wf": 300000,
+          "fx": 80000,
+          "mgmt": 200000,
+          "profit": 80000,
+          "vat": 467000
+        },
+        {
+          "mode": "simple",
+          "head": 4,
+          "unit": 3782000,
+          "base": 0,
+          "ot": 0,
+          "nt": 0,
+          "hol": 0,
+          "ins": 0,
+          "ret": 0,
+          "wf": 0,
+          "fx": 0,
+          "mgmt": 0,
+          "profit": 0,
+          "vat": 378200
+        },
+        {
+          "mode": "simple",
+          "head": 2,
+          "unit": 3130000,
+          "base": 0,
+          "ot": 0,
+          "nt": 0,
+          "hol": 0,
+          "ins": 0,
+          "ret": 0,
+          "wf": 0,
+          "fx": 0,
+          "mgmt": 0,
+          "profit": 0,
+          "vat": 313000
+        }
+      ]
+    }
+  }
+}
