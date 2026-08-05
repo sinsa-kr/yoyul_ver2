@@ -54,11 +54,17 @@
     .sum-card { background:#fdf9f3; border-radius:10px; box-shadow:0 1px 4px rgba(100,70,30,.09); padding:14px; text-align:center; }
 
     /* 근무 시프트 캘린더 빌더 */
+    /* 프리셋 = 눌러서 실행하는 평범한 버튼 (드래그 대상 아님) */
     .sb-preset-btn { background:#fdf9f3; border:1px solid #cfc0a8; color:#5a3828; padding:4px 10px; border-radius:5px; font-size:11px; font-weight:600; cursor:pointer; }
     .sb-preset-btn:hover { background:#f0e8d8; }
-    .sb-block-btn { background:#fdf9f3; border:1px solid #cfc0a8; color:#4a3828; padding:4px 9px; border-radius:5px; font-size:11px; cursor:grab; }
-    .sb-block-btn:hover { background:#f0e8d8; }
+    /* 블록 = 집어서 캘린더로 끌어다 놓는 칩 — 손잡이(⠿) + 캘린더 칸과 같은 색 스와치로 구분 */
+    .sb-block-btn { display:inline-flex; align-items:center; gap:5px; background:#fff; border:1px solid #cfc0a8;
+                    color:#4a3828; padding:4px 10px 4px 7px; border-radius:14px; font-size:11px; font-family:inherit;
+                    cursor:grab; box-shadow:0 1px 2px rgba(90,60,30,.10); }
+    .sb-block-btn:hover  { background:#faf5ee; border-color:#a9967c; }
     .sb-block-btn:active { cursor:grabbing; }
+    .sb-grip { color:#b0a08c; font-size:10px; line-height:1; letter-spacing:-1px; }
+    .sb-sw   { width:11px; height:11px; border-radius:3px; border:1px solid rgba(90,60,30,.22); flex-shrink:0; }
 
     /* 탭 네비게이션 */
     .tab-bar   { display:flex; gap:2px; background:#33524c; padding:0 20px; box-shadow:0 2px 6px rgba(20,45,40,.18); }
@@ -196,19 +202,19 @@
     <div style="padding:12px 18px;overflow-y:auto;flex:1;">
       <div id="sbGrid"></div>
       <div style="margin-top:10px;padding:8px 10px;background:#f0e9dc;border-radius:6px;">
-        <div style="font-size:10.5px;color:#7a6050;margin-bottom:6px;">선택한 날짜에 적용 — 캘린더에서 날짜를 먼저 클릭해 선택(여러 개 가능)하거나, 버튼을 캘린더 칸으로 바로 드래그해서 놓아도 됩니다</div>
+        <div style="font-size:10.5px;color:#7a6050;margin-bottom:6px;">아래 <b>색칠된 칩</b>을 캘린더 칸으로 끌어다 놓으세요 — 칸을 먼저 클릭해 여러 개 선택한 뒤 칩을 누르거나 놓으면 한번에 적용됩니다. 캘린더에 이미 배치된 근무끼리도 끌어서 옮길 수 있습니다(<b>Ctrl</b>을 누른 채 놓으면 복사).</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'off')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('off')" class="sb-block-btn">휴무</button>
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'day')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('day')" class="sb-block-btn">주간(08~16)</button>
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'eve')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('eve')" class="sb-block-btn">오후(16~24)</button>
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'night')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('night')" class="sb-block-btn">야간(00~08)</button>
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'alt')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('alt')" class="sb-block-btn">24시간(격일)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'off')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('off')" class="sb-block-btn"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_off"></span>휴무</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'day')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('day')" class="sb-block-btn"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_day"></span>주간(08~16)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'eve')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('eve')" class="sb-block-btn"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_eve"></span>오후(16~24)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'night')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('night')" class="sb-block-btn"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_night"></span>야간(00~08)</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'alt')" ondragend="sbDragEnd(event)" onclick="sbApplyBlock('alt')" class="sb-block-btn"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_alt"></span>24시간(격일)</button>
         </div>
         <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-top:6px;">
           <select id="sbCustomStart" style="padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:11px;outline:none;background:#fdf9f3;"></select>
           <span style="font-size:11px;color:#7a6a58;">~</span>
           <select id="sbCustomEnd" style="padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:11px;outline:none;background:#fdf9f3;"></select>
-          <button type="button" draggable="true" ondragstart="sbDragStart(event,'custom')" ondragend="sbDragEnd(event)" onclick="sbApplyCustom()" class="sb-block-btn" style="white-space:nowrap;">직접입력 적용</button>
+          <button type="button" draggable="true" ondragstart="sbDragStart(event,'custom')" ondragend="sbDragEnd(event)" onclick="sbApplyCustom()" class="sb-block-btn" style="white-space:nowrap;"><span class="sb-grip">⠿</span><span class="sb-sw" id="sbSw_custom"></span>직접입력 적용</button>
           <span style="flex:1;"></span>
           <button type="button" onclick="sbSelectAll()" style="font-size:10.5px;color:#5a7aaa;background:none;border:none;cursor:pointer;text-decoration:underline;white-space:nowrap;">전체선택</button>
           <button type="button" onclick="sbSelectNone()" style="font-size:10.5px;color:#a09080;background:none;border:none;cursor:pointer;text-decoration:underline;white-space:nowrap;">선택해제</button>
@@ -247,7 +253,7 @@
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div class="sec-hdr" style="margin-bottom:0;">👷 업무 목록</div>
-        <button onclick="addWork()" style="background:#a07040;color:white;border:none;padding:5px 13px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ 업무 추가</button>
+        <button onclick="addWork(null, true)" style="background:#a07040;color:white;border:none;padding:5px 13px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ 업무 추가</button>
       </div>
       <div id="workList"></div>
     </div>
@@ -796,7 +802,7 @@ function toggleShiftBasis(id) {
 // ================================================================
 // WORK ITEMS
 // ================================================================
-function addWork(p) {
+function addWork(p, atTop = false) {
   const id = ++wkCnt;
   const col = WK_COLORS[(id - 1) % WK_COLORS.length];
   p = p || { name:'', shiftType:'day', hourlyRate:MIN_WAGE, headcount:1, hoursRegular:209, hoursOvertime:0, hoursNight:0, weekendDays:0 };
@@ -865,7 +871,11 @@ function addWork(p) {
     </div>
   `;
   if (p.customPattern) div.dataset.pattern = JSON.stringify(p.customPattern);
-  $('workList').appendChild(div);
+  // atTop: "+ 업무 추가" 로 직접 추가할 때만 맨 위에 꽂는다(방금 추가한 카드를 바로 보도록).
+  // 저장본 복원(applyState)·초기 예시는 저장된 순서를 그대로 살려야 하므로 뒤에 붙인다.
+  const list = $('workList');
+  if (atTop) list.insertBefore(div, list.firstChild);
+  else list.appendChild(div);
   calculate();
 }
 
@@ -935,15 +945,37 @@ function sbBuildTimeOptions() {
   $('sbCustomEnd').innerHTML = opts;
 }
 
+// 블록 칩의 색 스와치를 캘린더 칸과 같은 팔레트로 칠한다 (색 정의는 SB_BLOCK_COLORS 한 곳에만)
+function sbPaintSwatches() {
+  for (const [k, c] of Object.entries(SB_BLOCK_COLORS)) {
+    const el = $(`sbSw_${k}`);
+    if (el) el.style.background = c;
+  }
+}
+
 function sbBlockLabel(blk) {
   if (!blk) return '휴무';
   for (const b of Object.values(SB_BLOCKS)) if (b.start === blk.start && b.end === blk.end) return b.label;
   return `${blk.start}~${blk.end}`;
 }
-function sbBlockColor(blk) {
-  const l = sbBlockLabel(blk);
-  return { '휴무':'#e8e0d0', '주간':'#cfe0f5', '오후':'#f5e0c0', '야간':'#d8cdf0', '24시간(격일)':'#f0c8c8' }[l] || '#c5e8d8';
+// 캘린더 칸 배경색 = 아래 블록 버튼의 스와치 색. 두 곳이 어긋나지 않도록 이 상수 하나만 참조한다.
+// off/custom 은 SB_BLOCKS 에 없는 가상 키 (휴무·직접입력)
+const SB_BLOCK_COLORS = {
+  off:    '#e8e0d0',
+  day:    '#cfe0f5',
+  eve:    '#f5e0c0',
+  night:  '#d8cdf0',
+  alt:    '#f0c8c8',
+  custom: '#c5e8d8',
+};
+
+// 블록 값 → SB_BLOCK_COLORS 키 ('off' | SB_BLOCKS 키 | 'custom')
+function sbBlockKey(blk) {
+  if (!blk) return 'off';
+  for (const [k, b] of Object.entries(SB_BLOCKS)) if (b.start === blk.start && b.end === blk.end) return k;
+  return 'custom';
 }
+function sbBlockColor(blk) { return SB_BLOCK_COLORS[sbBlockKey(blk)]; }
 
 // 프리셋(SHIFT_PATTERNS 엔트리)을 편집용 초안으로 복제 — regularHoursPerWeek 같은 선택 필드도 함께 복사
 function sbDraftFromPreset(preset) {
@@ -1039,17 +1071,27 @@ function sbApplyCustom() {
   sbApplyToIndices([...sbSelected], blk);
 }
 
-// 버튼 → 캘린더 칸 드래그앤드롭
+// ── 드래그앤드롭 ──────────────────────────────────────────────────────
+// 끌어온 대상이 아래 블록 칩인지 캘린더 칸인지 구분해야 하므로 payload 에 종류를 붙인다.
+//   'block:night' = 칩에서 새로 가져오기 / 'cell:6' = 6번 칸에 있는 근무를 옮기기
 function sbDragStart(e, blockKey) {
-  e.dataTransfer.setData('text/plain', blockKey);
-  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('text/plain', 'block:' + blockKey);
+  // dragover 는 데이터를 읽을 수 없어 출처를 모른 채 dropEffect 를 정해야 한다.
+  // effectAllowed 가 dropEffect 를 허용하지 않으면 브라우저가 drop 자체를 취소하므로
+  // 양쪽 출처 모두 copyMove 로 열어둔다.
+  e.dataTransfer.effectAllowed = 'copyMove';
   e.currentTarget.style.opacity = '0.5';
+}
+function sbCellDragStart(e, idx) {
+  e.dataTransfer.setData('text/plain', 'cell:' + idx);
+  e.dataTransfer.effectAllowed = 'copyMove';
+  e.currentTarget.style.opacity = '0.45';
 }
 function sbDragEnd(e) { e.currentTarget.style.opacity = '1'; }
 
 function sbCellDragOver(e) {
   e.preventDefault(); // 이게 있어야 drop 이벤트가 발생함
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  if (e.dataTransfer) e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
   e.currentTarget.style.outline = '2px solid #5a7aaa';
 }
 function sbCellDragLeave(e) {
@@ -1058,14 +1100,28 @@ function sbCellDragLeave(e) {
 function sbCellDrop(e, idx) {
   e.preventDefault();
   e.currentTarget.style.outline = e.currentTarget.dataset.outline || '';
-  const blockKey = e.dataTransfer.getData('text/plain');
-  if (!blockKey) return;
+  const payload = e.dataTransfer.getData('text/plain');
+  if (!payload) return;
+  const [kind, val] = payload.split(':');
+
+  if (kind === 'cell') {
+    // 칸 → 칸: 기본은 이동(원래 칸 비움), Ctrl 을 누른 채 놓으면 복사.
+    // 여러 칸이 선택돼 있어도 "옮기기"는 놓은 칸 하나에만 적용해야 예측 가능하다.
+    const from = Number(val);
+    if (!Number.isInteger(from) || from === idx) return;   // 제자리 드롭은 무시
+    const blk = sbDraft.days[from];
+    sbDraft.days[idx] = blk;
+    if (!e.ctrlKey) sbDraft.days[from] = null;
+    sbApplyToIndices([], null);   // 선택 해제 + 다시 그리기 + 재계산
+    return;
+  }
+
   let blk;
-  if (blockKey === 'custom') {
+  if (val === 'custom') {
     blk = sbReadCustomTime();
     if (!blk) return; // 미입력 — 이미 안내 표시됨
   } else {
-    blk = sbBlockValue(blockKey);
+    blk = sbBlockValue(val);
   }
   // 드롭한 칸이 현재 다중선택에 포함돼 있으면 선택 전체에, 아니면 그 칸 하나에만 적용
   const targets = sbSelected.has(idx) ? [...sbSelected] : [idx];
@@ -1082,8 +1138,13 @@ function sbRenderGrid() {
       const blk = sbDraft.days[idx];
       const sel = sbSelected.has(idx);
       const outline = sel ? '2px solid #4a3828' : '1px solid #ddd0bc';
-      html += `<div onclick="sbToggleCell(${idx})" ondragover="sbCellDragOver(event)" ondragleave="sbCellDragLeave(event)" ondrop="sbCellDrop(event,${idx})"
-        data-outline="${outline}" style="cursor:pointer;border-radius:4px;padding:5px 2px;text-align:center;background:${sbBlockColor(blk)};outline:${outline};outline-offset:-1px;">
+      // 근무가 들어있는 칸만 집어서 옮길 수 있게 한다 (빈 칸은 끌 대상이 없음)
+      const drag = blk
+        ? ` draggable="true" ondragstart="sbCellDragStart(event,${idx})" ondragend="sbDragEnd(event)"`
+        : '';
+      html += `<div onclick="sbToggleCell(${idx})"${drag} ondragover="sbCellDragOver(event)" ondragleave="sbCellDragLeave(event)" ondrop="sbCellDrop(event,${idx})"
+        data-outline="${outline}" title="${blk ? '끌어서 다른 날짜로 옮기기 (Ctrl+놓기 = 복사)' : ''}"
+        style="cursor:${blk ? 'grab' : 'pointer'};border-radius:4px;padding:5px 2px;text-align:center;background:${sbBlockColor(blk)};outline:${outline};outline-offset:-1px;">
         <div style="font-weight:700;color:#4a3828;">${sbBlockLabel(blk)}</div>
         ${blk ? `<div style="font-size:9px;color:#7a6a58;">${blk.start}~${blk.end}</div>` : ''}
       </div>`;
@@ -1117,10 +1178,20 @@ function sbApply() {
   calculate();
 }
 
+// 업무 id 를 "화면에 보이는 순서"로 반환 — 생성 순(1..wkCnt)이 아니라 DOM 순서.
+// 새 업무를 맨 위에 추가해도 결과표·차트·비교탭·엑셀이 모두 같은 순서를 따르도록,
+// 업무를 순회하는 모든 곳(collectWorks/collectState/collectVendorState)이 이 함수만 쓴다.
+function workIdsInOrder() {
+  const list = $('workList');
+  if (!list) return [];
+  return [...list.children]
+    .map(el => Number(String(el.id).replace('work_', '')))
+    .filter(id => Number.isInteger(id) && id > 0);
+}
+
 function collectWorks() {
   const items = [];
-  for (let i = 1; i <= wkCnt; i++) {
-    if (!$(`work_${i}`)) continue;
+  for (const i of workIdsInOrder()) {
     const rate = gv(`wRate_${i}`);
     const warnEl = $(`wWarn_${i}`);
     if (warnEl) warnEl.style.display = (rate > 0 && rate < MIN_WAGE) ? 'block' : 'none';
@@ -1653,6 +1724,12 @@ function reconcileCmpRows(results) {
     setTxt(`cmpShift_${r.id}`,  SHIFT_LABELS[r.shiftType] || '');
     setTxt(`cmpMyHead_${r.id}`, `${r.headcount}명`);
   }
+  // 요율 산정 탭의 업무 순서(results)와 비교 행 순서를 일치시킨다 —
+  // 새 행은 위에서 항상 뒤에 붙으므로, 순서가 바뀌었으면 여기서 재배치해야 한다.
+  results.forEach((r, i) => {
+    const el = $(`cmpRow_${r.id}`);
+    if (el && body.children[i] !== el) body.insertBefore(el, body.children[i] || null);
+  });
   $('cmpEmpty').style.display = results.length ? 'none' : 'block';
   body.style.display          = results.length ? 'block' : 'none';
 }
@@ -3008,8 +3085,7 @@ function setSaves(arr) { localStorage.setItem(SL_KEY, JSON.stringify(arr)); }
 
 function collectState() {
   const works = [];
-  for (let i = 1; i <= wkCnt; i++) {
-    if (!$(`work_${i}`)) continue;
+  for (const i of workIdsInOrder()) {          // 화면에 보이는 순서 그대로 저장
     const pattern = $(`work_${i}`).dataset.pattern;
     works.push({
       name:          $(`wName_${i}`)?.value || '',
@@ -3045,8 +3121,7 @@ function collectState() {
 // 업체 산정안 — works 와 "동일 순서 배열"로 저장 (id 는 로드 시 재부여되므로 index 정합)
 function collectVendorState() {
   const arr = [];
-  for (let i = 1; i <= wkCnt; i++) {
-    if (!$(`work_${i}`)) continue;            // collectState 의 works 루프와 동일 조건
+  for (const i of workIdsInOrder()) {          // collectState 의 works 루프와 동일 순서
     const o = { mode: $(`cmpRow_${i}`)?.dataset.mode || 'simple',
                 head: gv(`v_head_${i}`), unit: gv(`v_unit_${i}`) };
     for (const k of VENDOR_FIELDS) o[k] = gv(`v_${k}_${i}`);
@@ -3220,6 +3295,7 @@ $('minWageAlert').textContent =
   `⚠️ 일부 업무의 시급이 ${BASE_YEAR}년 법정 최저시급(${MIN_WAGE.toLocaleString('ko-KR')}원)보다 낮습니다.`;
 
 sbBuildTimeOptions();
+sbPaintSwatches();
 
 addWork({
   name: '경비', shiftType: 'alternate', hourlyRate: MIN_WAGE,
