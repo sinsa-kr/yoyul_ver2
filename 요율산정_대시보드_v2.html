@@ -61,6 +61,14 @@
     · 인쇄는 테마와 무관하게 항상 밝게 강제(@media print 에서 토큰 재정의) ·
       color-scheme 지정으로 체크박스·날짜선택기 등 기본 위젯도 테마를 따른다
     · 엑셀 출력 테마(EXCEL_THEMES)는 화면 테마와 분리 유지 — 다크로 보다 뽑아도 문서는 그대로
+
+    [2026-08-13 개정] 경고 배너 시인성 개선
+    · 연장근로 한도 배너가 베이지 배경(#f5ede0)과 배경대비 1.07 로 사실상 안 보였다
+      → 채도를 올린 앰버 틴트(#f7d18a) + 좌측 바 6px 로 대비 1.25 확보
+    · 최저임금 배너도 대비 1.05 로 같은 문제였고, 경고만 강화하면 위법 사안이 주의보다
+      약해 보이는 역전이 생겨 함께 조정. 단 --danger-bg 는 비교표 '과다' 셀과 공유하므로
+      배너 전용 토큰(--alert-err-bg/line/tx)을 새로 두어 표에는 영향이 없다
+    · 3개 테마 × 2개 배너 모두 글자 대비 WCAG AA 통과(최저 6.79) · 인쇄 시 밝은 배너 강제
   -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -137,9 +145,12 @@
       --ok-bg:         #dff0e4;
       --am-bg:         #f5edd8;
       --am-line:       #c8a060;
-      --warn-bg:       #fdf4e8;
-      --warn-line:     #c89040;
-      --warn-tx:       #8a5a18;
+      --warn-bg:       #f7d18a;
+      --warn-line:     #b8781a;
+      --warn-tx:       #5e3606;
+      --alert-err-bg:  #f8c8bd;
+      --alert-err-line: #c0392b;
+      --alert-err-tx:  #7a1f14;
       --purple-bg:     #eae5f5;
       --info-bg:       #eef3f8;
       --info-bg2:      #e0eaf5;
@@ -214,9 +225,12 @@
       --ok-bg:         #e4f2ea;
       --am-bg:         #f7edde;
       --am-line:       #c99b58;
-      --warn-bg:       #fdf3e4;
-      --warn-line:     #c68a2e;
-      --warn-tx:       #8a5a12;
+      --warn-bg:       #fbe0ac;
+      --warn-line:     #c8850f;
+      --warn-tx:       #6b4208;
+      --alert-err-bg:  #fad5cf;
+      --alert-err-line: #c8372c;
+      --alert-err-tx:  #83201a;
       --purple-bg:     #eeebf7;
       --info-bg:       #eaf1fa;
       --info-bg2:      #e3edf9;
@@ -291,9 +305,12 @@
       --ok-bg:         #1e332a;
       --am-bg:         #332b1c;
       --am-line:       #8a6a34;
-      --warn-bg:       #2f2618;
-      --warn-line:     #9c7530;
-      --warn-tx:       #e0bd7e;
+      --warn-bg:       #4a3617;
+      --warn-line:     #d9a05e;
+      --warn-tx:       #f5d9a8;
+      --alert-err-bg:  #4a221e;
+      --alert-err-line: #e07a7a;
+      --alert-err-tx:  #f5c4c0;
       --purple-bg:     #262234;
       --info-bg:       #1c2733;
       --info-bg2:      #1f2c3a;
@@ -405,6 +422,9 @@
         --tx-mute2:#555; --grip:#888; --tx-warn:#8a4020;
         --line:#bbb; --line2:#aaa; --line3:#bbb; --line4:#aaa; --line5:#999;
         --line-row:#ddd; --line6:#aaa; --line7:#bbb; --line-hv:#888;
+        /* 경고 배너도 항상 밝게 — 다크에서 뽑아도 검은 띠가 나가지 않는다 */
+        --warn-bg:#f7d18a; --warn-line:#b8781a; --warn-tx:#5e3606;
+        --alert-err-bg:#f8c8bd; --alert-err-line:#c0392b; --alert-err-tx:#7a1f14;
       }
       body { background:#fff; }
       .no-print { display:none !important; }
@@ -540,10 +560,10 @@
 </div>
 
 <!-- MIN WAGE ALERT -->
-<div id="minWageAlert" style="display:none;background:var(--danger-bg);border-left:4px solid var(--danger2);color:var(--danger-tx);padding:8px 20px;font-size:13px;"></div>
+<div id="minWageAlert" style="display:none;background:var(--alert-err-bg);border-left:6px solid var(--alert-err-line);color:var(--alert-err-tx);padding:9px 20px;font-size:13px;font-weight:600;"></div>
 
 <!-- 연장근로 한도 ALERT -->
-<div id="otLimitAlert" style="display:none;background:var(--warn-bg);border-left:4px solid var(--warn-line);color:var(--warn-tx);padding:8px 20px;font-size:13px;"></div>
+<div id="otLimitAlert" style="display:none;background:var(--warn-bg);border-left:6px solid var(--warn-line);color:var(--warn-tx);padding:9px 20px;font-size:13px;"></div>
 
 <!-- ===================== TAB ① 요율 산정 ===================== -->
 <div id="tab_calc" class="tab-pane active">
