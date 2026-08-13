@@ -36,6 +36,18 @@
     · 공통비용(복리후생·기타고정비)을 세로표에 흡수 — 곁가지 표가 사라져 열너비 충돌 해소
     · 자동필터(산정내역은 단위 열 필터가 유용) · 인쇄 여백 · Print_Area / Print_Titles 적용
     · sheetCtx().build() 버그 수정 — t:'z' 스텁 셀은 파일에 기록되지 않으므로 AOA 를 패딩
+
+    [2026-08-13 개정] 실무 운영 기능 3종 — 계산 산식은 변경 없음
+    · 연장근로 한도(주 12h ≈ 월 52h, 근기법 §53①) 경고 — 최저임금 경고와 같은 2단 구조
+      (업무 카드 인라인 + 상단 배너). 업무별 「근로시간 적용제외(§63 감시·단속적 승인)」
+      체크박스로 예외 처리, 격일제 선택 시 기본 ON. 순수 경고이며 금액에 영향 없음
+      ※ 휴일근로도 법정 한도에 포함되나 소정근로와 합산 보관돼 판정 불가 — 연장(h)만으로 판정
+    · 인상률 시뮬레이션 — 시급/복리후생비/기타고정비는 %, 관리비율은 %p 로 가감.
+      computeAll(adj) 선택 인자 하나로 처리해 계산 경로를 이원화하지 않음(adj 없으면 기존과 동일).
+      기본은 미리보기(입력값 불변), 「입력값에 실제 반영」 버튼을 눌러야 적용(시급은 원 단위 반올림)
+    · 산정 정보(업체명·계약기간·작성자·메모) — 계산과 무관한 문서 메타데이터.
+      화면 요약줄·엑셀 요약시트·클립보드에 표기되고 JSON/엑셀 파일명에 업체명이 붙는다.
+      저장 스키마에 meta 필드 추가 (구버전 저장본은 빈 값으로 정상 로드)
   -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -240,6 +252,9 @@
 <!-- MIN WAGE ALERT -->
 <div id="minWageAlert" style="display:none;background:#fef0ec;border-left:4px solid #c86858;color:#9a3828;padding:8px 20px;font-size:13px;"></div>
 
+<!-- 연장근로 한도 ALERT -->
+<div id="otLimitAlert" style="display:none;background:#fdf4e8;border-left:4px solid #c89040;color:#8a5a18;padding:8px 20px;font-size:13px;"></div>
+
 <!-- ===================== TAB ① 요율 산정 ===================== -->
 <div id="tab_calc" class="tab-pane active">
 
@@ -248,6 +263,37 @@
 
   <!-- ===== LEFT PANEL ===== -->
   <div class="left-col">
+
+    <!-- 산정 정보 (문서 메타데이터) -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">📄 산정 정보</div>
+        <button onclick="toggleSec('metaSec','metaBtn')" id="metaBtn" style="font-size:11px;color:#9b7050;background:none;border:none;cursor:pointer;text-decoration:underline;">접기</button>
+      </div>
+      <div id="metaSec">
+        <div style="margin-bottom:6px;">
+          <label style="font-size:10px;color:#7a6a58;">업체명 <span style="color:#a09080;">— 파일명·엑셀·클립보드에 함께 기록됩니다</span></label>
+          <input type="text" id="metaVendor" placeholder="예: 남양산업" oninput="renderMetaLine()" class="inp" style="margin-top:2px;">
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:10px;color:#7a6a58;">계약기간</label>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
+            <input type="date" id="metaFrom" oninput="renderMetaLine()" class="inp" style="flex:1;">
+            <span style="font-size:11px;color:#a09080;">~</span>
+            <input type="date" id="metaTo" oninput="renderMetaLine()" class="inp" style="flex:1;">
+          </div>
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:10px;color:#7a6a58;">작성자</label>
+          <input type="text" id="metaAuthor" placeholder="예: 구매팀 홍길동" oninput="renderMetaLine()" class="inp" style="margin-top:2px;">
+        </div>
+        <div>
+          <label style="font-size:10px;color:#7a6a58;">메모 <span style="color:#a09080;">— 산정 전제·특이사항</span></label>
+          <textarea id="metaNote" rows="2" placeholder="예: 2026년 최저임금 기준, 야간수당 별도 협의분 미반영"
+            class="inp" style="margin-top:2px;resize:vertical;line-height:1.5;"></textarea>
+        </div>
+      </div>
+    </div>
 
     <!-- 업무 목록 -->
     <div class="panel">
@@ -319,11 +365,50 @@
   <!-- ===== MIDDLE PANEL ===== -->
   <div class="mid-col">
 
+    <!-- 산정 정보 한 줄 표시 (값이 있을 때만) -->
+    <div id="metaLine" style="display:none;font-size:12px;color:#5a4838;background:#f0e8d8;border-left:3px solid #a07040;border-radius:5px;padding:6px 10px;margin-bottom:10px;"></div>
+
     <!-- 요약 카드 -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
       <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">전체 인원</div><div id="s_head" style="font-size:26px;font-weight:800;color:#5a7aaa;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">명</div></div>
       <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">월 청구 총액</div><div id="s_monthly" style="font-size:20px;font-weight:800;color:#4d7a5a;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (관리비 포함)</div></div>
       <div class="sum-card"><div style="font-size:11px;color:#7a6a58;">연간 추정 금액</div><div id="s_annual" style="font-size:20px;font-weight:800;color:#a07040;margin:4px 0;">-</div><div style="font-size:10px;color:#a09080;">원 (×12개월)</div></div>
+    </div>
+
+    <!-- 인상률 시뮬레이션 -->
+    <div class="panel no-print" style="margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14px;font-weight:700;color:#4a3828;">📈 인상률 시뮬레이션 <span style="font-size:11px;font-weight:400;color:#7a6a58;">계약 갱신 협상용 — 미리보기</span></div>
+        <button id="simBtn" onclick="toggleSec('simBody','simBtn')" class="rstbtn" style="font-size:11px;text-decoration:underline;">펼치기</button>
+      </div>
+      <div id="simBody" style="display:none;margin-top:10px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div><label style="font-size:10px;color:#7a6a58;">시급</label>
+            <div style="display:flex;align-items:center;gap:3px;margin-top:2px;">
+              <input type="number" id="simRate" value="0" step="0.1" oninput="calculate()" class="inp" style="padding:4px 6px;">
+              <span style="font-size:11px;color:#a09080;">%</span></div></div>
+          <div><label style="font-size:10px;color:#7a6a58;">복리후생비</label>
+            <div style="display:flex;align-items:center;gap:3px;margin-top:2px;">
+              <input type="number" id="simWf" value="0" step="0.1" oninput="calculate()" class="inp" style="padding:4px 6px;">
+              <span style="font-size:11px;color:#a09080;">%</span></div></div>
+          <div><label style="font-size:10px;color:#7a6a58;">기타고정비</label>
+            <div style="display:flex;align-items:center;gap:3px;margin-top:2px;">
+              <input type="number" id="simFx" value="0" step="0.1" oninput="calculate()" class="inp" style="padding:4px 6px;">
+              <span style="font-size:11px;color:#a09080;">%</span></div></div>
+          <div title="관리비율은 그 자체가 비율이라 %p(퍼센트포인트)로 가감합니다 — 10% 에 +2 를 넣으면 12% 가 됩니다."><label style="font-size:10px;color:#7a6a58;">관리비율</label>
+            <div style="display:flex;align-items:center;gap:3px;margin-top:2px;">
+              <input type="number" id="simMgmt" value="0" step="0.1" oninput="calculate()" class="inp" style="padding:4px 6px;">
+              <span style="font-size:11px;color:#a09080;">%p</span></div></div>
+        </div>
+        <div id="simResult"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;">
+          <div style="font-size:9.5px;color:#a09080;line-height:1.5;">
+            ※ 4대보험·퇴직충당금·관리비는 인건비 기반이라 시급 인상 시 자동으로 함께 오릅니다 · 휴일 정액단가도 시급과 같은 인상률을 받습니다<br>
+            ※ 미리보기일 뿐 입력값은 바뀌지 않습니다 — 반영 시 시급이 원 단위로 반올림되어 총액이 미세하게 달라질 수 있습니다
+          </div>
+          <button onclick="applyRaise()" style="background:#a07040;color:white;border:none;padding:6px 13px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">✓ 입력값에 실제 반영</button>
+        </div>
+      </div>
     </div>
 
     <!-- 업무별 요약 테이블 -->
@@ -540,6 +625,10 @@ const SHIFT_LABELS = { ...Object.fromEntries(Object.entries(SHIFT_DEF).map(([k, 
 
 // 주휴수당 가산분(주 8h → 월평균 환산, 반올림) — 주간고정 프리셋의 209−174=35 와 동일한 값
 const WEEKLY_REST_HOURS = Math.round(8 * 365 / 7 / 12);
+
+// 연장근로 한도(근기법 §53① 주 12h)의 월평균 환산 — WEEKLY_REST_HOURS 와 같은 환산식
+// SHIFT_DEF 대비: 2교대 52h(한도와 동일, 경고 없음) · 4조3교대 8h · 격일제 120h(초과)
+const OT_LIMIT_HOURS = Math.round(12 * 365 / 7 / 12);   // = 52h
 
 // ================================================================
 // 근무 시프트 캘린더 빌더 — N주 반복 캘린더를 그리면 월평균 소정/연장/야간/주말로 환산
@@ -824,6 +913,9 @@ function addWork(p, atTop = false) {
     ? p.holidayHours
     : (p.weekendDays || 0) * 8;
   const holFlatOn = !!p.holFlatOn;
+  // 근로시간 적용제외(§63): 저장본에 있으면 사용, 없으면(구버전 포함) 격일제만 ON 으로 추정 —
+  // 격일제 경비·시설관리가 감시·단속적 근로 승인의 전형이라 기본 예시가 경고로 뒤덮이지 않게 한다
+  const exemptOn = (p.exempt !== undefined && p.exempt !== null) ? !!p.exempt : (p.shiftType === 'alternate');
 
   const div = document.createElement('div');
   div.id = `work_${id}`;
@@ -876,7 +968,8 @@ function addWork(p, atTop = false) {
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;">
         <div><label style="font-size:10px;color:#7a6a58;">소정 (h)</label><input type="number" id="wReg_${id}" value="${p.hoursRegular}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#7a6a58;">연장 (h)</label><input type="number" id="wOT_${id}" value="${p.hoursOvertime}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#7a6a58;">연장 (h)</label><input type="number" id="wOT_${id}" value="${p.hoursOvertime}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;">
+          <div id="wOtWarn_${id}" style="display:none;font-size:10px;color:#b07020;margin-top:1px;" title="근로기준법 제53조 제1항 — 연장근로는 주 12시간(월 약 ${OT_LIMIT_HOURS}h) 한도입니다. 휴일근로도 이 한도에 포함되므로 실제로는 더 초과할 수 있습니다.">⚠ 한도 초과</div></div>
         <div><label style="font-size:10px;color:#7a6a58;">야간 (h)</label><input type="number" id="wNt_${id}" value="${p.hoursNight}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#7a6a58;">휴일근로 (h)</label><input type="number" id="wWk_${id}" value="${holH}" oninput="calculate()" style="width:100%;padding:3px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:12px;outline:none;background:#fdf9f3;margin-top:2px;box-sizing:border-box;"></div>
       </div>
@@ -887,6 +980,10 @@ function addWork(p, atTop = false) {
           ${holFlatOn ? '' : 'disabled'}
           style="width:74px;padding:2px 5px;border:1px solid #cfc0a8;border-radius:4px;font-size:11px;text-align:right;outline:none;background:${holFlatOn ? '#fdf9f3' : '#efe9df'};">
         <span style="color:#a09080;">원/h</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:#7a6050;margin-top:4px;cursor:pointer;"
+        title="근로기준법 제63조 — 감시·단속적 근로 종사자로 고용노동부 승인을 받으면 근로시간·휴게·휴일 규정이 적용되지 않습니다. 체크하면 이 업무의 연장근로 한도 경고를 표시하지 않습니다.">
+        <input type="checkbox" id="wExempt_${id}" ${exemptOn ? 'checked' : ''} onchange="calculate()"> 근로시간 적용제외 (§63 감시·단속적 승인)
       </label>
       <div id="shiftBasis_${id}" style="display:none;"></div>
     </div>
@@ -913,6 +1010,7 @@ function onShiftChange(id) {
     $(`wOT_${id}`).value  = def.overtime;
     $(`wNt_${id}`).value  = def.night;
     if ($(`wRest_${id}`)) $(`wRest_${id}`).checked = (shiftType === 'day' || shiftType === 'alternate');
+    if ($(`wExempt_${id}`)) $(`wExempt_${id}`).checked = (shiftType === 'alternate');
     const basisEl = $(`shiftBasis_${id}`);
     if (basisEl && basisEl.style.display !== 'none') {
       basisEl.innerHTML = getShiftBasisHTML(shiftType);
@@ -1230,8 +1328,13 @@ function collectWorks() {
     const rate = gv(`wRate_${i}`);
     const warnEl = $(`wWarn_${i}`);
     if (warnEl) warnEl.style.display = (rate > 0 && rate < MIN_WAGE) ? 'block' : 'none';
+    // 연장근로 한도 경고 — §63 적용제외를 체크한 업무는 표시하지 않는다
+    const otExempt = gc(`wExempt_${i}`);
+    const otWarnEl = $(`wOtWarn_${i}`);
+    if (otWarnEl) otWarnEl.style.display = (!otExempt && gv(`wOT_${i}`) > OT_LIMIT_HOURS) ? 'block' : 'none';
     items.push({
       id: i,
+      otExempt,
       name:          $(`wName_${i}`)?.value || `업무 ${i}`,
       shiftType:     $(`wShift_${i}`)?.value || 'day',
       hourlyRate:    rate,
@@ -1361,17 +1464,31 @@ function calcOne(w, rates, wfTotal, fxPerPerson, mgmtRate) {
 }
 
 // 입력 수집 → 계산까지 한 번에 (calculate / copyResult / exportExcel 공용)
-function computeAll() {
+// adj 는 인상률 시뮬레이션 전용 선택 인자 — 넘기지 않으면 기존 동작과 완전히 동일하다.
+//   { rate:시급 %, wf:복리후생비 %, fx:기타고정비 %, mgmt:관리비율 %p }
+// works 는 collectWorks() 가 매번 새로 만든 객체라 여기서 배수를 곱해도 화면 입력값은 그대로다.
+function computeAll(adj) {
   const works   = collectWorks();
   const welfare = collectWelfare();
   const fixed   = collectFixed();
-  const mgmtR   = gv('mgmtRate') / 100;
+  let   mgmtR   = gv('mgmtRate') / 100;
+  let   wfTotal = welfare.total;
+  let   fxTotal = fixed.total;
   const rates   = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
+  if (adj) {
+    const k = 1 + (adj.rate || 0) / 100;
+    // 휴일 정액단가도 인건비라 시급과 같은 인상률을 받는다
+    works.forEach(w => { w.hourlyRate *= k; w.holFlatRate *= k; });
+    wfTotal *= 1 + (adj.wf || 0) / 100;
+    fxTotal *= 1 + (adj.fx || 0) / 100;
+    mgmtR    = (gv('mgmtRate') + (adj.mgmt || 0)) / 100;   // 관리비율만 %p 가감
+  }
   const totHead = works.reduce((s, w) => s + w.headcount, 0);
-  const fxPer   = totHead > 0 ? fixed.total / totHead : 0;
-  const results  = works.map(w => calcOne(w, rates, welfare.total, fxPer, mgmtR));
+  const fxPer   = totHead > 0 ? fxTotal / totHead : 0;
+  const results  = works.map(w => calcOne(w, rates, wfTotal, fxPer, mgmtR));
   const grandTot = results.reduce((s, r) => s + r.sub, 0);
-  return { works, welfare, fixed, mgmtR, rates, totHead, fxPer, results, grandTot };
+  // welfare/fixed 는 화면 입력 원본 그대로. 인상 적용된 값이 필요하면 wfTotal/fxTotal 을 쓴다.
+  return { works, welfare, fixed, wfTotal, fxTotal, mgmtR, rates, totHead, fxPer, results, grandTot };
 }
 
 // 비용 7분류 집계 — 화면 도넛차트 / 엑셀 요약시트 공용 (전체 인원 기준 월 금액)
@@ -1405,6 +1522,15 @@ function calculate() {
 
   $('minWageAlert').style.display = works.some(w => w.hourlyRate > 0 && w.hourlyRate < MIN_WAGE) ? 'block' : 'none';
 
+  const otOver = works.filter(w => !w.otExempt && w.hoursOvertime > OT_LIMIT_HOURS);
+  $('otLimitAlert').style.display = otOver.length ? 'block' : 'none';
+  if (otOver.length) {
+    $('otLimitAlert').innerHTML =
+      `⚠️ <b>${esc(otOver.map(w => w.name).join(', '))}</b> — 월 연장근로가 법정 한도(주 12h ≈ 월 ${OT_LIMIT_HOURS}h)를 초과합니다. `
+      + `휴일근로도 이 한도에 포함되므로 실제로는 더 초과할 수 있습니다. `
+      + `감시·단속적 근로로 고용노동부 승인을 받은 업무라면 업무 카드의 <b>「근로시간 적용제외(§63)」</b>를 체크하세요.`;
+  }
+
   const agg = aggCost(results);
 
   // Summary cards
@@ -1426,6 +1552,120 @@ function calculate() {
 
   // 업체 산정안 비교 (탭 ②)
   renderCompare(base);
+
+  // 인상률 시뮬레이션 미리보기
+  renderRaiseSim(grandTot);
+}
+
+// ================================================================
+// 산정 정보 (문서 메타데이터) — 계산에는 관여하지 않고 산출물의 신원만 담당
+// ================================================================
+const gs = id => ($(id)?.value || '').trim();
+
+function collectMeta() {
+  return { vendor: gs('metaVendor'), from: gs('metaFrom'), to: gs('metaTo'),
+           author: gs('metaAuthor'), note: gs('metaNote') };
+}
+
+function applyMeta(m) {
+  m = m || {};
+  $('metaVendor').value = m.vendor || '';
+  $('metaFrom').value   = m.from   || '';
+  $('metaTo').value     = m.to     || '';
+  $('metaAuthor').value = m.author || '';
+  $('metaNote').value   = m.note   || '';
+  renderMetaLine();
+}
+
+// 계약기간 "2026-01-01 ~ 2026-12-31" — 한쪽만 있어도 표기
+function metaPeriod(m) {
+  if (!m.from && !m.to) return '';
+  const d = s => s ? s.replace(/-/g, '.') : '';
+  return `${d(m.from) || '?'} ~ ${d(m.to) || '?'}`;
+}
+
+// 파일명에 넣을 업체명 — 경로 구분자·제어문자·공백을 걷어낸다. 비었으면 '' (기존 파일명 형식 유지)
+function metaFileTag() {
+  const v = gs('metaVendor')
+    .replace(/[\\/:*?"<>|]/g, '')      // 윈도·맥 파일명 금지문자
+    .replace(/[\x00-\x1f]/g, '')       // eslint-disable-line no-control-regex
+    .replace(/\s+/g, '')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .slice(0, 40);
+  return v ? '_' + v : '';
+}
+
+function renderMetaLine() {
+  const m  = collectMeta();
+  const el = $('metaLine');
+  if (!el) return;
+  const parts = [];
+  if (m.vendor) parts.push(`<b>${esc(m.vendor)}</b>`);
+  const p = metaPeriod(m);
+  if (p) parts.push(esc(p));
+  if (m.author) parts.push('작성 ' + esc(m.author));
+  if (m.note) parts.push(`<span style="color:#8a7a68;">${esc(m.note)}</span>`);
+  el.style.display = parts.length ? 'block' : 'none';
+  el.innerHTML = parts.join(' <span style="color:#c0b0a0;">·</span> ');
+}
+
+// ================================================================
+// 인상률 시뮬레이션 — 계약 갱신 협상에서 "N% 인상하면 얼마"를 즉석 환산
+// ================================================================
+// gv() 는 음수를 0으로 막지만 인상률은 인하(마이너스) 협상도 다뤄야 하므로 부호를 살려 읽는다
+const gvs = id => parseFloat(String($(id)?.value ?? '').replace(/,/g, '')) || 0;
+
+function readRaiseAdj() {
+  return { rate: gvs('simRate'), wf: gvs('simWf'), fx: gvs('simFx'), mgmt: gvs('simMgmt') };
+}
+
+function renderRaiseSim(grandTot) {
+  const el = $('simResult');
+  if (!el) return;
+  const adj  = readRaiseAdj();
+  const none = !adj.rate && !adj.wf && !adj.fx && !adj.mgmt;
+  const after = none ? grandTot : computeAll(adj).grandTot;
+  const diff  = after - grandTot;
+  const ratio = grandTot > 0 ? diff / grandTot : 0;
+  const col   = diff > 0 ? '#c06060' : diff < 0 ? '#4d7a5a' : '#a09080';
+  const row = (lbl, m, a, bold) => `
+    <div style="display:grid;grid-template-columns:64px 1fr 1fr;font-size:12px;padding:5px 8px;border-bottom:1px solid #f0e8d8;${bold?'font-weight:700;':''}">
+      <span style="color:#7a6a58;">${lbl}</span>
+      <span style="text-align:right;${bold?`color:${col};`:''}">${m}</span>
+      <span style="text-align:right;${bold?`color:${col};`:''}">${a}</span>
+    </div>`;
+  el.innerHTML = `
+    <div style="border:1px solid #ddd0bc;border-radius:6px;overflow:hidden;${none?'opacity:.5;':''}">
+      <div style="display:grid;grid-template-columns:64px 1fr 1fr;font-size:10px;font-weight:700;color:#7a6a58;padding:5px 8px;background:#f0e8d8;">
+        <span>구분</span><span style="text-align:right;">월</span><span style="text-align:right;">연간</span>
+      </div>
+      ${row('현재',   fmt(grandTot), fmt(grandTot * 12))}
+      ${row('인상 후', fmt(after),    fmt(after * 12))}
+      ${row('증감',   `${sgn(diff)}원 (${pctn(ratio)})`, `${sgn(diff * 12)}원`, true)}
+    </div>`;
+}
+
+function applyRaise() {
+  const adj = readRaiseAdj();
+  if (!adj.rate && !adj.wf && !adj.fx && !adj.mgmt) { alert('인상률을 먼저 입력해주세요.'); return; }
+  const pm = n => (n > 0 ? '+' : '') + n;   // sgn() 은 원 단위 반올림이라 소수 인상률에는 못 쓴다
+  const parts = [];
+  if (adj.rate) parts.push(`시급 ${pm(adj.rate)}%`);
+  if (adj.wf)   parts.push(`복리후생비 ${pm(adj.wf)}%`);
+  if (adj.fx)   parts.push(`기타고정비 ${pm(adj.fx)}%`);
+  if (adj.mgmt) parts.push(`관리비율 ${pm(adj.mgmt)}%p`);
+  if (!confirm(`${parts.join(' · ')}\n\n위 인상률을 실제 입력값에 반영합니다. 되돌리려면 반대 부호로 다시 반영하거나 저장본을 불러와야 합니다.\n계속할까요?`)) return;
+
+  const kR = 1 + adj.rate / 100, kW = 1 + adj.wf / 100, kF = 1 + adj.fx / 100;
+  const bump = (id, k) => { if ($(id)) $(id).value = fmtn(Math.round(gv(id) * k)); };
+  for (const i of workIdsInOrder()) { bump(`wRate_${i}`, kR); bump(`wHolRate_${i}`, kR); }
+  for (const w of WF_ITEMS) bump(w.id + '_v', kW);          // 체크 해제된 항목도 함께 — 나중에 켜도 일관되게
+  for (let i = 1; i <= wfCnt; i++) bump(`wfAmt_${i}`, kW);
+  for (let i = 1; i <= fxCnt; i++) bump(`fxAmt_${i}`, kF);
+  if (adj.mgmt) $('mgmtRate').value = Math.max(0, Math.round((gv('mgmtRate') + adj.mgmt) * 100) / 100);
+
+  ['simRate','simWf','simFx','simMgmt'].forEach(id => { if ($(id)) $(id).value = 0; });
+  calculate();
 }
 
 // ================================================================
@@ -2033,6 +2273,8 @@ function resetAll() {
   $('fixedRows').innerHTML = '';
   $('wfCustomRows').innerHTML = '';
   wkCnt = 0; fxCnt = 0; wfCnt = 0;
+  applyMeta(null);
+  ['simRate','simWf','simFx','simMgmt'].forEach(id => { if ($(id)) $(id).value = 0; });
   clearVendor();
   for (const [k, v] of Object.entries(DEFAULT_RATES)) { if ($(k)) $(k).value = v; }
   for (const w of WF_ITEMS) { if ($(w.id)) $(w.id).checked=(w.id==='wf_meal'); }
@@ -2061,9 +2303,14 @@ function copyResult() {
   const base = computeAll();
   const { results, totHead, grandTot } = base;
 
+  const m = collectMeta();
   const lines = [
     '=== 협력업체 요율산정 결과 ===',
+    ...(m.vendor ? [`업체명: ${m.vendor}`] : []),
+    ...(metaPeriod(m) ? [`계약기간: ${metaPeriod(m)}`] : []),
     `산정일: ${new Date().toLocaleDateString('ko-KR')} (${BASE_YEAR}년 법정 기준)`,
+    ...(m.author ? [`작성자: ${m.author}`] : []),
+    ...(m.note ? [`메모: ${m.note}`] : []),
     '',
     '[적용 비율]',
     `퇴직충당금 ${gv('rRet')}% | 국민연금 ${gv('rNP')}% | 건강보험 ${gv('rHI')}% | 장기요양 ${gv('rLT')}% | 실업급여 ${gv('rEI1')}% | 고용안정·직업능력개발 ${gv('rEI2')}% | 관리비율 ${gv('mgmtRate')}%`,
@@ -2073,6 +2320,12 @@ function copyResult() {
     '',
     `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
   ];
+
+  const otOver = results.filter(r => !r.otExempt && r.hoursOvertime > OT_LIMIT_HOURS);
+  if (otOver.length) {
+    lines.push('', `[⚠ 연장근로 한도 확인] ${otOver.map(r => `${r.name}(${r.hoursOvertime}h)`).join(', ')}`
+      + ` — 법정 한도 주 12h ≈ 월 ${OT_LIMIT_HOURS}h 초과 (휴일근로 포함 시 추가 초과 가능)`);
+  }
 
   const cmp = compareAll(base);
   if (cmp.has) {
@@ -2439,7 +2692,7 @@ function exportExcel() {
   ]};
 
   const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  XLSX.writeFile(wb, `요율산정${cmp.has ? '_비교' : ''}_${today}.xlsx`);
+  XLSX.writeFile(wb, `요율산정${metaFileTag()}${cmp.has ? '_비교' : ''}_${today}.xlsx`);
 }
 
 // ── ① 요약 시트 — A4 세로 1장 (결재·보고용) ────────────────
@@ -2454,8 +2707,15 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   let r;
 
   // ── 제목 ──
-  r = X.band(`협력업체 요율산정 결과 요약`, NC, S.titleBig, 36);
+  const meta = collectMeta();
+  r = X.band(`협력업체 요율산정 결과 요약${meta.vendor ? ` — ${meta.vendor}` : ''}`, NC, S.titleBig, 36);
   r = X.band(`산정일 ${today} · ${BASE_YEAR}년 법정 기준 · 업무 ${results.length}건 · 전체 ${totHead}명`, NC, S.subTitle, 20);
+  // 산정 정보 — 입력된 항목만 한 줄로 (결재 문서로서 누가·언제·어느 계약 건인지 식별)
+  const metaBits = [];
+  if (metaPeriod(meta)) metaBits.push(`계약기간 ${metaPeriod(meta)}`);
+  if (meta.author)      metaBits.push(`작성자 ${meta.author}`);
+  if (meta.note)        metaBits.push(`메모: ${meta.note}`);
+  if (metaBits.length) r = X.band(metaBits.join(' · '), NC, S.subTitle, 18);
   X.push(); X.h(X.rows - 1, 6);
 
   // ── 핵심 지표 (KPI 카드 3장) ──
@@ -2632,6 +2892,15 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
       X.fx(CR.price,   3, CS(cmpRef.SR.price, 3));
       X.fx(CR.headEff, 3, CS(cmpRef.SR.headEff, 3));
     }
+  }
+
+  // ── 연장근로 한도 경고 (초과 업무가 있을 때만) ──
+  const otOver = results.filter(x => !x.otExempt && x.hoursOvertime > OT_LIMIT_HOURS);
+  if (otOver.length) {
+    X.push(); X.h(X.rows - 1, 6);
+    const wr = X.push([`⚠ 연장근로 한도 확인 — ${otOver.map(x => `${x.name}(${x.hoursOvertime}h)`).join(', ')}`
+      + ` : 법정 한도 주 12h ≈ 월 ${OT_LIMIT_HOURS}h 초과. 휴일근로 포함 시 추가 초과 가능 (근기법 §53①)`]);
+    X.mg(wr, 0, wr, NC-1); X.stR(wr, 0, NC-1, S.diffWarnC); X.h(wr, 26);
   }
 
   // ── 주석 ──
@@ -3145,6 +3414,7 @@ function collectState() {
       holFlatOn:     gc(`wHolFlat_${i}`),
       holFlatRate:   gv(`wHolRate_${i}`),
       weeklyRest:    gc(`wRest_${i}`),
+      exempt:        gc(`wExempt_${i}`),
       customPattern: pattern ? JSON.parse(pattern) : null,
     });
   }
@@ -3159,6 +3429,7 @@ function collectState() {
   }
   const welfareCustom = collectWelfareCustom();
   return {
+    meta: collectMeta(),
     rates: { rNP: gv('rNP'), rHI: gv('rHI'), rLT: gv('rLT'), rEI1: gv('rEI1'), rEI2: gv('rEI2'), rAcc: gv('rAcc'), rRet: gv('rRet'), mgmtRate: gv('mgmtRate') },
     welfare, welfareCustom, fixed, works,
     vendor: collectVendorState(),
@@ -3203,6 +3474,8 @@ function applyState(state) {
   $('cmpBody').innerHTML = '';
   wkCnt = 0; fxCnt = 0; wfCnt = 0;
 
+  applyMeta(state.meta);   // 구버전 저장본은 meta 가 없음 → 전부 빈 값으로 초기화
+
   if (state.rates) {
     ['rNP','rHI','rLT','rEI1','rEI2','rAcc','rRet','mgmtRate'].forEach(k => { if (state.rates[k] !== undefined && $(k)) $(k).value = state.rates[k]; });
   }
@@ -3243,7 +3516,8 @@ function openSlModal() {
   const modal = $('slModal');
   modal.style.display = 'flex';
   const d = new Date();
-  $('slSaveName').value = `요율산정_${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  const vendor = gs('metaVendor');
+  $('slSaveName').value = `${vendor || '요율산정'}_${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
   renderSlList();
 }
 
@@ -3290,10 +3564,11 @@ function renderSlList() {
     const wCount = s.data?.works?.length || 0;
     const heads  = (s.data?.works || []).reduce((a, w) => a + (w.headcount || 0), 0);
     const hasCmp = (s.data?.vendor?.works || []).some(w => (w.unit || 0) > 0 || (w.base || 0) > 0);
+    const vendorNm = s.data?.meta?.vendor || '';
     return `<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid #ddd0bc;border-radius:7px;margin-bottom:6px;background:#fdf9f3;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:700;color:#4a3828;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.name)}</div>
-        <div style="font-size:10px;color:#9a8878;margin-top:2px;">${dateStr} · 업무 ${wCount}개 · 총 ${heads}명${hasCmp ? ' · <span style="color:#4d7a5a;font-weight:700;">비교안 ✓</span>' : ''}</div>
+        <div style="font-size:10px;color:#9a8878;margin-top:2px;">${vendorNm ? `<span style="color:#a07040;font-weight:700;">${esc(vendorNm)}</span> · ` : ''}${dateStr} · 업무 ${wCount}개 · 총 ${heads}명${hasCmp ? ' · <span style="color:#4d7a5a;font-weight:700;">비교안 ✓</span>' : ''}</div>
       </div>
       <button onclick="doLoad(${s.id})" style="background:#4d7a5a;color:white;border:none;padding:5px 13px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">불러오기</button>
       <button onclick="doDelete(${s.id})" style="background:#c86858;color:white;border:none;padding:5px 10px;border-radius:5px;font-size:11px;cursor:pointer;">삭제</button>
@@ -3310,7 +3585,7 @@ function exportJSON() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   const d = new Date();
-  a.download = `요율산정_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+  a.download = `요율산정${metaFileTag()}_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -3343,6 +3618,7 @@ $('minWageAlert').textContent =
 
 sbBuildTimeOptions();
 sbPaintSwatches();
+renderMetaLine();
 
 addWork({
   name: '경비', shiftType: 'alternate', hourlyRate: MIN_WAGE,
