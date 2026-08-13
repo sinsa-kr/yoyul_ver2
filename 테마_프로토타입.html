@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="warm">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>요율산정 대시보드 — 색상 테마 프로토타입</title>
+<!--
+  색상 테마 프로토타입 (본 대시보드와 별개 파일)
+  · 목적: 인라인에 흩어진 60여 개 색상을 시맨틱 토큰으로 정리하고 3개 테마를 얹어본다
+  · 테마: warm(현재 베이지) / light(화이트) / dark(다크)
+  · 전환 스위치는 헤더 오른쪽 상단, 선택값은 localStorage 에 저장
+  · 실제 적용 시에는 이 :root 토큰 블록과 [data-theme] 3벌만 대시보드로 옮기고
+    본문의 하드코딩 색을 var(--토큰) 으로 치환하면 된다
+-->
+<style>
+/* ============================================================
+   시맨틱 토큰 — 색의 "역할"에만 이름을 준다 (색 이름을 쓰지 않는다)
+   ============================================================ */
+:root {
+  /* 면 */
+  --bg:          #f5ede0;   /* 페이지 바탕 */
+  --panel:       #fdf9f3;   /* 패널·카드 */
+  --panel-alt:   #faf5ee;   /* 테이블 짝수행 */
+  --inset:       #f0e9dc;   /* 패널 안의 한 단계 들어간 박스 */
+  --field:       #fdf9f3;   /* 입력칸 */
+  --field-off:   #efe9df;   /* 비활성 입력칸 */
+  --chip:        #f0e8d8;   /* 테이블 헤더·태그 */
+
+  /* 선 */
+  --line:        #ddd0bc;   /* 기본 테두리 */
+  --line-2:      #cfc0a8;   /* 강한 테두리 */
+  --line-soft:   #f0e8d8;   /* 행 구분선 */
+
+  /* 글자 */
+  --tx:          #4a3828;   /* 본문 */
+  --tx-2:        #7a6a58;   /* 보조 */
+  --tx-3:        #a09080;   /* 흐림 */
+
+  /* 헤더 */
+  --head:        #33524c;
+  --head-tx:     #ffffff;
+  --head-sub:    #bcd6cd;
+  --sw-on:       var(--panel);   /* 테마 스위치 선택 상태 배경 */
+
+  /* 탭 — 헤더와 같은 띠 위에 얹힌 폴더형. 선택된 탭은 페이지 배경색이라 본문과 이어져 보인다 */
+  --tabbar:      #33524c;
+  --tab:         #47645d;
+  --tab-tx:      #cfe0da;
+  --tab-hover:   #567870;
+  --tab-shadow:  0 2px 6px rgba(20,45,40,.18);
+
+  /* 의미색 */
+  --accent:      #a07040;   /* 금액 강조 */
+  --ok:          #4d7a5a;   /* 소계·총액 */
+  --info:        #5a7aaa;   /* 인원 */
+  --danger:      #c06060;   /* 경고·삭제 */
+  --warn:        #b07020;   /* 주의 */
+  --focus:       #b07d4e;   /* 입력 포커스 */
+
+  /* 배너 */
+  --danger-bg:   #fef0ec;  --danger-line: #c86858;  --danger-tx: #9a3828;
+  --warn-bg:     #fdf4e8;  --warn-line:   #c89040;  --warn-tx:   #8a5a18;
+
+  /* 섹션 배지 */
+  --tag-ok-bg:   #dff0e4;  --tag-ok-tx:   #3d6b4a;  --tag-ok-line: #5a8a6a;
+  --tag-am-bg:   #f5edd8;  --tag-am-tx:   #9e7040;  --tag-am-line: #c8a060;
+
+  /* 버튼 */
+  --btn-ok:      #4d7a5a;  --btn-copy:  #5a8a6a;  --btn-save: #5a6a9a;
+  --btn-reset:   #8a7a6a;  --btn-add:   #a07040;
+
+  --shadow:      0 1px 4px rgba(100,70,30,.09);
+  --shadow-head: 0 2px 8px rgba(20,45,40,.25);
+
+  /* 업무 색상 순환 (차트·업무 카드 좌측 띠) */
+  --wk1:#7a9fcc; --wk2:#70b898; --wk3:#d4a060; --wk4:#d07878;
+  --wk5:#9880cc; --wk6:#d87aaa; --wk7:#5ab8cc; --wk8:#90c070;
+}
+
+/* ---------- 화이트 모드 ---------- */
+:root[data-theme="light"] {
+  --bg:#eef1f4; --panel:#ffffff; --panel-alt:#f7f9fb; --inset:#f1f4f7;
+  --field:#ffffff; --field-off:#eceff2; --chip:#e9edf1;
+  --line:#dde3e9; --line-2:#c9d2da; --line-soft:#eef1f4;
+  --tx:#1f2933; --tx-2:#54606c; --tx-3:#8c98a4;
+  --head:#2f5551; --head-tx:#ffffff; --head-sub:#b9d3cd;
+  --accent:#a8641f; --ok:#2f7350; --info:#33619e; --danger:#c33b3b; --warn:#a8641f;
+  --focus:#3d7d74;
+  --tabbar:#2f5551; --tab:#446b66; --tab-tx:#cfe0da; --tab-hover:#52807a;
+  --tab-shadow:0 2px 6px rgba(20,45,40,.16);
+  --danger-bg:#fdeeee; --danger-line:#c33b3b; --danger-tx:#992424;
+  --warn-bg:#fdf3e4;   --warn-line:#c68a2e;   --warn-tx:#8a5a12;
+  --tag-ok-bg:#e4f2ea; --tag-ok-tx:#2f7350; --tag-ok-line:#5a9e78;
+  --tag-am-bg:#f7edde; --tag-am-tx:#a8641f; --tag-am-line:#c99b58;
+  --btn-ok:#2f7350; --btn-copy:#3f8560; --btn-save:#425d8f; --btn-reset:#6b7580; --btn-add:#a8641f;
+  --shadow:0 1px 3px rgba(30,45,60,.10);
+  --shadow-head:0 2px 8px rgba(20,45,40,.20);
+  --wk1:#5b87c4; --wk2:#3fa377; --wk3:#c98a2e; --wk4:#c25c5c;
+  --wk5:#7f63c0; --wk6:#c65894; --wk7:#2f9fb8; --wk8:#6faa4a;
+}
+
+/* ---------- 다크 모드 ---------- */
+:root[data-theme="dark"] {
+  --bg:#14181c; --panel:#1d232a; --panel-alt:#232a32; --inset:#272f38;
+  --field:#272f38; --field-off:#20262d; --chip:#2c353f;
+  --line:#333d47; --line-2:#43505c; --line-soft:#2a323b;
+  --tx:#e3e7eb; --tx-2:#a3aeb8; --tx-3:#6d7883;
+  /* 헤더는 배경보다 확실히 밝게 — 슬레이트 티일 브랜드색을 다크에서도 유지 */
+  --head:#20342f; --head-tx:#eaf4f0; --head-sub:#96bcb2; --sw-on:#3a4c56;
+  --accent:#d9a05e; --ok:#63b98a; --info:#7fa8e0; --danger:#e07a7a; --warn:#d9a05e;
+  --focus:#5fa79c;
+  --tabbar:#20342f; --tab:#2e4741; --tab-tx:#9dc0b8; --tab-hover:#3a5850;
+  --tab-shadow:0 2px 8px rgba(0,0,0,.45);
+  --danger-bg:#33211f; --danger-line:#b25050; --danger-tx:#eda3a3;
+  --warn-bg:#2f2618;   --warn-line:#9c7530;   --warn-tx:#e0bd7e;
+  --tag-ok-bg:#1e332a; --tag-ok-tx:#7cc79c; --tag-ok-line:#3f7c5c;
+  --tag-am-bg:#332b1c; --tag-am-tx:#d9a05e; --tag-am-line:#8a6a34;
+  --btn-ok:#3d7a58; --btn-copy:#417a5e; --btn-save:#455a86; --btn-reset:#4c5560; --btn-add:#8a6234;
+  --shadow:0 1px 4px rgba(0,0,0,.45);
+  --shadow-head:0 2px 10px rgba(0,0,0,.55);
+  --wk1:#7fa8dd; --wk2:#5fc39c; --wk3:#dcae6b; --wk4:#dc8484;
+  --wk5:#a68fdd; --wk6:#dd8bb4; --wk7:#5fc4da; --wk8:#9ac97a;
+}
+
+/* ============================================================
+   공통 스타일 — 색은 전부 토큰 참조
+   ============================================================ */
+* { box-sizing: border-box; }
+body { font-family:'Malgun Gothic','맑은 고딕',sans-serif; background:var(--bg); color:var(--tx);
+       margin:0; transition:background .18s, color .18s; }
+.panel { background:var(--panel); border-radius:10px; box-shadow:var(--shadow); padding:14px;
+         transition:background .18s; }
+.sec-hdr { font-size:12px; font-weight:700; color:var(--tx); margin-bottom:8px; }
+.inp { padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:12px;
+       outline:none; width:100%; background:var(--field); color:var(--tx); font-family:inherit; }
+.inp:focus { border-color:var(--focus); }
+.inp-r { padding:3px 6px; border:1px solid var(--line); border-radius:4px; font-size:12px;
+         text-align:right; outline:none; width:70px; background:var(--field); color:var(--tx); }
+.rate-row { display:flex; align-items:center; justify-content:space-between; padding:3px 0; }
+.res-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0;
+           font-size:13px; border-bottom:1px solid var(--line-soft); }
+.rstbtn { color:var(--tx-3); background:none; border:none; cursor:pointer; font-size:12px;
+          padding:1px 3px; border-radius:3px; }
+.rstbtn:hover { color:var(--tx); background:var(--chip); }
+.delbtn { color:var(--danger); background:none; border:none; cursor:pointer; font-size:18px;
+          line-height:1; padding:0 2px; }
+.sum-card { background:var(--panel); border-radius:10px; box-shadow:var(--shadow); padding:14px;
+            text-align:center; }
+.lnk { font-size:11px; color:var(--accent); background:none; border:none; cursor:pointer;
+       text-decoration:underline; padding:0; font-family:inherit; }
+.hbtn { color:#fff; border:none; padding:7px 14px; border-radius:6px; font-size:13px;
+        cursor:pointer; font-family:inherit; }
+label { font-size:10px; color:var(--tx-2); }
+
+/* 헤더 */
+.head { background:var(--head); color:var(--head-tx); padding:12px 20px; display:flex;
+        justify-content:space-between; align-items:center; box-shadow:var(--shadow-head);
+        transition:background .18s; }
+.head h1 { font-size:18px; font-weight:700; margin:0; }
+.head p  { font-size:11px; color:var(--head-sub); margin:2px 0 0; }
+
+/* 테마 스위치 — 헤더 오른쪽 상단. 선택 표시(썸)가 미끄러지는 세그먼트 컨트롤 */
+.theme-sw { position:relative; display:grid; grid-template-columns:repeat(3,1fr); width:156px;
+            background:rgba(255,255,255,.12); padding:2px; border-radius:999px;
+            border:1px solid rgba(255,255,255,.16); }
+/* 썸 너비 = (컨테이너 − 패딩)/3 → 자기 너비의 100%씩 이동하면 정확히 한 칸 */
+.theme-thumb { position:absolute; top:2px; left:2px; height:calc(100% - 4px);
+               width:calc((100% - 4px) / 3); border-radius:999px; background:var(--sw-on);
+               box-shadow:0 1px 3px rgba(0,0,0,.25);
+               transition:transform .24s cubic-bezier(.4,0,.2,1), background .18s; }
+.theme-sw button { position:relative; z-index:1; background:none; border:none; color:var(--head-sub);
+                   font-size:10.5px; padding:4px 0; border-radius:999px; cursor:pointer;
+                   font-family:inherit; display:flex; align-items:center; justify-content:center;
+                   gap:4px; transition:color .18s; white-space:nowrap; }
+.theme-sw button:hover { color:var(--head-tx); }
+.theme-sw button[aria-pressed="true"] { color:var(--head-tx); font-weight:700; }
+:root[data-theme="warm"]  .theme-sw button[aria-pressed="true"],
+:root[data-theme="light"] .theme-sw button[aria-pressed="true"] { color:var(--tx); }
+.sw-dot { width:7px; height:7px; border-radius:50%; border:1px solid rgba(0,0,0,.28); flex-shrink:0; }
+/* 접근성: 키보드 포커스가 보이도록 */
+.theme-sw button:focus-visible { outline:2px solid var(--head-tx); outline-offset:-2px; }
+@media (prefers-reduced-motion: reduce) { .theme-thumb { transition:none; } }
+
+/* 탭 — 원본과 동일한 폴더형 (헤더와 같은 띠 위에 얹힘) */
+.tab-bar { display:flex; gap:2px; background:var(--tabbar); padding:0 20px;
+           box-shadow:var(--tab-shadow); transition:background .18s; }
+.tab-btn { background:var(--tab); color:var(--tab-tx); border:none; padding:9px 22px;
+           font-size:13.5px; font-weight:700; cursor:pointer; border-radius:8px 8px 0 0;
+           font-family:inherit; display:flex; align-items:center; gap:7px;
+           transition:background .15s, color .15s; }
+.tab-btn:hover  { background:var(--tab-hover); color:var(--head-tx); }
+.tab-btn.active { background:var(--bg); color:var(--tx); }
+.tab-badge { font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:9px;
+             background:var(--panel); color:var(--tx); }
+
+/* 배너 */
+.alert-warn { background:var(--warn-bg); border-left:4px solid var(--warn-line); color:var(--warn-tx);
+              padding:8px 20px; font-size:13px; }
+
+/* 레이아웃 */
+.main-grid { display:grid; grid-template-columns:380px 1fr 280px; gap:14px; padding:14px;
+             align-items:start; }
+/* 원본과 동일 — 좌측만 스크롤(스크롤바 폭까지 원본과 같게 재현) */
+.left-col  { display:flex; flex-direction:column; gap:10px; max-height:calc(100vh - 118px);
+             overflow-y:auto; padding-right:2px; }
+.mid-col   { display:flex; flex-direction:column; gap:10px; }
+.right-col { display:flex; flex-direction:column; gap:10px; }
+
+/* 업무 카드 */
+.work-card { border-radius:8px; padding:12px; border:1px solid var(--line);
+             border-left:4px solid var(--wk1); background:var(--panel-alt); }
+.work-inset { background:var(--inset); border-radius:5px; padding:7px 8px; margin-top:7px; }
+.warn-inline { font-size:10px; color:var(--warn); margin-top:1px; }
+.chk { display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--tx-2);
+       cursor:pointer; margin-top:4px; }
+
+/* 테이블 */
+.tbl-head { display:grid; grid-template-columns:1fr 72px 44px 86px 96px 106px; font-size:11px;
+            font-weight:700; color:var(--tx-2); padding:6px 8px; background:var(--chip);
+            border-radius:6px 6px 0 0; border:1px solid var(--line); border-bottom:none; }
+.tbl-body { border:1px solid var(--line); border-top:none; border-radius:0 0 6px 6px; }
+.tbl-row { display:grid; grid-template-columns:1fr 72px 44px 86px 96px 106px; font-size:12px;
+           padding:8px; border-bottom:1px solid var(--line-soft); align-items:center; }
+.tbl-row:nth-child(even) { background:var(--panel-alt); }
+.tbl-foot { display:grid; grid-template-columns:1fr 72px 44px 86px 96px 106px; font-size:12px;
+            font-weight:700; padding:8px; background:var(--chip); border-radius:6px; margin-top:4px;
+            border:1px solid var(--line-2); color:var(--accent); }
+.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+/* 시뮬 미리보기 */
+.sim-grid { display:grid; grid-template-columns:64px 1fr 1fr; font-size:12px; padding:5px 8px;
+            border-bottom:1px solid var(--line-soft); }
+.sim-head { display:grid; grid-template-columns:64px 1fr 1fr; font-size:10px; font-weight:700;
+            color:var(--tx-2); padding:5px 8px; background:var(--chip); }
+
+/* 산정 정보 줄 */
+.meta-line { font-size:12px; color:var(--tx); background:var(--chip);
+             border-left:3px solid var(--accent); border-radius:5px; padding:6px 10px; }
+
+/* 섹션 배지 */
+.tag-ok { font-size:11px; font-weight:700; color:var(--tag-ok-tx); background:var(--tag-ok-bg);
+          padding:5px 10px; border-radius:5px; border-left:3px solid var(--tag-ok-line); }
+.tag-am { font-size:11px; font-weight:700; color:var(--tag-am-tx); background:var(--tag-am-bg);
+          padding:5px 10px; border-radius:5px; border-left:3px solid var(--tag-am-line); }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <h1>협력업체 요율산정 시스템</h1>
+    <p>업무별 교대근무 · 법정수당 · 4대보험 · 복리후생비 자동 반영 · <b style="color:var(--head-tx);">2026년 법정 기준</b></p>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="hbtn" style="background:var(--btn-ok);">📥 엑셀 다운로드</button>
+    <button class="hbtn" style="background:var(--btn-copy);">결과 복사</button>
+    <button class="hbtn" style="background:var(--btn-save);">📂 저장/불러오기</button>
+    <button class="hbtn" style="background:var(--btn-reset);">초기화</button>
+    <!-- ▼ 테마 스위치 -->
+    <div class="theme-sw" role="group" aria-label="색상 테마">
+      <span class="theme-thumb" id="themeThumb" aria-hidden="true"></span>
+      <button onclick="setTheme('warm')"  id="tw_warm"  aria-pressed="true"  title="기본 (베이지)"><span class="sw-dot" style="background:#e8dcc8;"></span>기본</button>
+      <button onclick="setTheme('light')" id="tw_light" aria-pressed="false" title="화이트 모드"><span class="sw-dot" style="background:#ffffff;"></span>화이트</button>
+      <button onclick="setTheme('dark')"  id="tw_dark"  aria-pressed="false" title="다크 모드"><span class="sw-dot" style="background:#1d232a;"></span>다크</button>
+    </div>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active">① 요율 산정</button>
+  <button class="tab-btn">② 산정안 비교<span class="tab-badge">−1.1%</span></button>
+</div>
+
+<div class="alert-warn">
+  ⚠️ <b>경비</b> — 월 연장근로가 법정 한도(주 12h ≈ 월 52h)를 초과합니다.
+  감시·단속적 근로 승인을 받은 업무라면 업무 카드의 <b>「근로시간 적용제외(§63)」</b>를 체크하세요.
+</div>
+
+<div class="main-grid">
+
+  <!-- ===== 좌측 ===== -->
+  <div class="left-col">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">📄 산정 정보</div>
+        <button class="lnk">접기</button>
+      </div>
+      <label>업체명 <span style="color:var(--tx-3);">— 파일명·엑셀·클립보드에 함께 기록됩니다</span></label>
+      <input class="inp" value="비지산업" style="margin:2px 0 6px;">
+      <label>작성자</label>
+      <input class="inp" value="구매팀 홍길동" style="margin-top:2px;">
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="sec-hdr" style="margin-bottom:0;">👷 업무 목록</div>
+        <button class="hbtn" style="background:var(--btn-add);padding:5px 13px;font-size:12px;font-weight:700;">+ 업무 추가</button>
+      </div>
+      <div class="work-card">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <div class="dot" style="width:10px;height:10px;background:var(--wk1);"></div>
+          <input class="inp" value="경비" style="flex:1;font-size:13px;font-weight:600;">
+          <select class="inp" style="width:auto;font-size:12px;"><option>격일제</option></select>
+          <button class="delbtn">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1.2fr .8fr .8fr;gap:6px;">
+          <div><label>시급 (원)</label><input class="inp" value="10,320" style="margin-top:2px;"></div>
+          <div><label>인원수 (명)</label><input class="inp" value="3" style="margin-top:2px;"></div>
+          <div><label>산재율 (%)</label><input class="inp" value="0.7" style="margin-top:2px;"></div>
+        </div>
+        <div class="work-inset">
+          <div style="font-size:10px;color:var(--tx-2);font-weight:600;display:flex;justify-content:space-between;">
+            <span>월 근무시간 — 교대형태 선택 시 자동입력</span>
+            <span style="display:flex;gap:8px;"><button class="lnk">📋 산정 근거</button><button class="lnk" style="color:var(--info);">🗓 근무표 직접 만들기</button></span>
+          </div>
+          <label class="chk"><input type="checkbox" checked> 주휴수당 가산(주 8h, 소정근로에 ±35h)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;margin-top:5px;">
+            <div><label>소정 (h)</label><input class="inp" value="209" style="margin-top:2px;"></div>
+            <div><label>연장 (h)</label><input class="inp" value="120" style="margin-top:2px;">
+              <div class="warn-inline">⚠ 한도 초과</div></div>
+            <div><label>야간 (h)</label><input class="inp" value="60" style="margin-top:2px;"></div>
+            <div><label>휴일근로 (h)</label><input class="inp" value="0" style="margin-top:2px;"></div>
+          </div>
+          <label class="chk"><input type="checkbox"> 휴일 정액
+            <input class="inp-r" value="0" style="background:var(--field-off);"><span style="color:var(--tx-3);">원/h</span></label>
+          <label class="chk"><input type="checkbox"> 근로시간 적용제외 (§63 감시·단속적 승인)</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">⚙️ 법정 비율 설정</div>
+        <button class="lnk">접기</button>
+      </div>
+      <div class="tag-ok" style="margin-bottom:8px;">4대보험 — 사업주 부담률 (%, 직접 수정 가능) · 2026년 기준</div>
+      <div class="rate-row"><span style="font-size:12px;">국민연금</span>
+        <span style="display:flex;align-items:center;gap:3px;"><input class="inp-r" value="4.75"><span style="font-size:11px;color:var(--tx-3);">%</span><button class="rstbtn">↺</button></span></div>
+      <div class="rate-row"><span style="font-size:12px;">건강보험</span>
+        <span style="display:flex;align-items:center;gap:3px;"><input class="inp-r" value="3.595"><span style="font-size:11px;color:var(--tx-3);">%</span><button class="rstbtn">↺</button></span></div>
+      <div class="rate-row"><span style="font-size:12px;">산재보험</span>
+        <span style="display:flex;align-items:center;gap:3px;"><input class="inp-r" value="0.7"><span style="font-size:11px;color:var(--tx-3);">%</span><button class="rstbtn">↺</button></span></div>
+    </div>
+  </div>
+
+  <!-- ===== 중앙 ===== -->
+  <div class="mid-col">
+    <div class="meta-line"><b>비지산업</b> <span style="color:var(--tx-3);">·</span> 2026.01.01 ~ 2026.12.31 <span style="color:var(--tx-3);">·</span> 작성 구매팀 홍길동</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      <div class="sum-card"><div style="font-size:11px;color:var(--tx-2);">전체 인원</div>
+        <div style="font-size:26px;font-weight:800;color:var(--info);margin:4px 0;">19</div>
+        <div style="font-size:10px;color:var(--tx-3);">명</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:var(--tx-2);">월 청구 총액</div>
+        <div style="font-size:20px;font-weight:800;color:var(--ok);margin:4px 0;">61,851,975</div>
+        <div style="font-size:10px;color:var(--tx-3);">원 (관리비 포함)</div></div>
+      <div class="sum-card"><div style="font-size:11px;color:var(--tx-2);">연간 추정 금액</div>
+        <div style="font-size:20px;font-weight:800;color:var(--accent);margin:4px 0;">742,223,700</div>
+        <div style="font-size:10px;color:var(--tx-3);">원 (×12개월)</div></div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14px;font-weight:700;">📈 인상률 시뮬레이션
+          <span style="font-size:11px;font-weight:400;color:var(--tx-2);">계약 갱신 협상용 — 미리보기</span></div>
+        <button class="lnk">접기</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:10px 0;">
+        <div><label>시급</label><input class="inp" value="3" style="margin-top:2px;"></div>
+        <div><label>복리후생비</label><input class="inp" value="0" style="margin-top:2px;"></div>
+        <div><label>기타고정비</label><input class="inp" value="0" style="margin-top:2px;"></div>
+        <div><label>관리비율</label><input class="inp" value="0" style="margin-top:2px;"></div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:6px;overflow:hidden;">
+        <div class="sim-head"><span>구분</span><span style="text-align:right;">월</span><span style="text-align:right;">연간</span></div>
+        <div class="sim-grid"><span style="color:var(--tx-2);">현재</span><span style="text-align:right;">61,851,975원</span><span style="text-align:right;">742,223,700원</span></div>
+        <div class="sim-grid"><span style="color:var(--tx-2);">인상 후</span><span style="text-align:right;">63,552,404원</span><span style="text-align:right;">762,628,848원</span></div>
+        <div class="sim-grid" style="font-weight:700;"><span style="color:var(--tx-2);">증감</span>
+          <span style="text-align:right;color:var(--danger);">+1,700,429원 (+2.7%)</span>
+          <span style="text-align:right;color:var(--danger);">+20,405,148원</span></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;">
+        <div style="font-size:9.5px;color:var(--tx-3);line-height:1.5;">
+          ※ 4대보험·퇴직충당금·관리비는 인건비 기반이라 시급 인상 시 자동으로 함께 오릅니다<br>
+          ※ 미리보기일 뿐 입력값은 바뀌지 않습니다</div>
+        <button class="hbtn" style="background:var(--btn-add);padding:6px 13px;font-size:11px;font-weight:700;white-space:nowrap;">✓ 입력값에 실제 반영</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📋 업무별 청구 요약</div>
+      <div class="tbl-head"><span>업무명</span><span style="text-align:center;">교대형태</span><span style="text-align:center;">인원</span>
+        <span style="text-align:right;">시급</span><span style="text-align:right;">1인 청구단가</span><span style="text-align:right;">소계</span></div>
+      <div class="tbl-body">
+        <div class="tbl-row"><span style="display:flex;align-items:center;gap:5px;"><span class="dot" style="background:var(--wk1);"></span><b>생산직(3조3교대)</b></span>
+          <span style="text-align:center;color:var(--tx-2);">3교대</span><span style="text-align:center;">18명</span>
+          <span style="text-align:right;">10,320</span><span style="text-align:right;font-weight:600;color:var(--accent);">3,273,658원</span>
+          <span style="text-align:right;font-weight:700;color:var(--ok);">58,925,851원</span></div>
+        <div class="tbl-row"><span style="display:flex;align-items:center;gap:5px;"><span class="dot" style="background:var(--wk2);"></span><b>관리자(주간 상근)</b></span>
+          <span style="text-align:center;color:var(--tx-2);">주간고정</span><span style="text-align:center;">1명</span>
+          <span style="text-align:right;">10,320</span><span style="text-align:right;font-weight:600;color:var(--accent);">2,926,124원</span>
+          <span style="text-align:right;font-weight:700;color:var(--ok);">2,926,124원</span></div>
+      </div>
+      <div class="tbl-foot"><span>전체 합계</span><span></span><span style="text-align:center;">19명</span><span></span><span></span>
+        <span style="text-align:right;font-size:13px;">61,851,975원</span></div>
+    </div>
+
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📌 공통 비용 상세 <span style="font-size:12px;font-weight:400;color:var(--tx-2);">(전 업무 동일 적용)</span></div>
+      <div class="tag-ok" style="margin-bottom:6px;">복리후생비</div>
+      <div style="padding:0 8px;">
+        <div class="res-row"><span>식대</span><span style="font-weight:600;">136,500원</span></div>
+        <div class="res-row"><span>명절상여</span><span style="font-weight:600;">179,740원</span></div>
+        <div class="res-row" style="font-weight:700;color:var(--tag-ok-tx);border-bottom:none;"><span>소계 (1인당)</span><span>316,240원</span></div>
+      </div>
+      <div class="tag-am" style="margin:10px 0 6px;">기타 고정비 (전체 인원 배분)</div>
+      <div style="padding:0 8px;">
+        <div class="res-row"><span>기타 안전용품</span><span style="font-weight:600;">300,000원</span></div>
+        <div class="res-row" style="font-weight:700;color:var(--tag-am-tx);border-bottom:none;"><span>소계 (1인 배분)</span><span>15,789원</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 우측 ===== -->
+  <div class="right-col">
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;">비용 구성 비율</div>
+      <svg viewBox="0 0 42 42" style="width:100%;max-width:180px;display:block;margin:0 auto;">
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--wk1)" stroke-width="6" stroke-dasharray="51 49" stroke-dashoffset="25"/>
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--wk5)" stroke-width="6" stroke-dasharray="22 78" stroke-dashoffset="-26"/>
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--wk2)" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="-48"/>
+        <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--wk3)" stroke-width="6" stroke-dasharray="13 87" stroke-dashoffset="-62"/>
+      </svg>
+    </div>
+    <div class="panel">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;">구성 비율 범례</div>
+      <div class="res-row"><span style="display:flex;align-items:center;gap:6px;"><span class="dot" style="background:var(--wk1);"></span>기본급</span><span><span style="color:var(--tx-3);font-size:11px;">50.7%</span> <b>31,362,540</b></span></div>
+      <div class="res-row"><span style="display:flex;align-items:center;gap:6px;"><span class="dot" style="background:var(--wk5);"></span>법정수당(가산)</span><span><span style="color:var(--tx-3);font-size:11px;">21.8%</span> <b>5,201,280</b></span></div>
+      <div class="res-row"><span style="display:flex;align-items:center;gap:6px;"><span class="dot" style="background:var(--wk2);"></span>4대보험</span><span><span style="color:var(--tx-3);font-size:11px;">14.0%</span> <b>5,299,694</b></span></div>
+      <div class="res-row" style="border-bottom:none;"><span style="display:flex;align-items:center;gap:6px;"><span class="dot" style="background:var(--wk3);"></span>복리후생비</span><span><span style="color:var(--tx-3);font-size:11px;">13.0%</span> <b>6,008,560</b></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const THEME_KEY = 'rateCalc_theme';
+const THEMES = ['warm', 'light', 'dark'];
+
+function setTheme(name) {
+  const i = THEMES.indexOf(name);
+  if (i < 0) return;
+  document.documentElement.dataset.theme = name;
+  THEMES.forEach(t => document.getElementById('tw_' + t).setAttribute('aria-pressed', String(t === name)));
+  // 썸을 자기 너비의 i배만큼 이동 — 칸 수가 늘어도 이 한 줄이 그대로 동작한다
+  document.getElementById('themeThumb').style.transform = `translateX(${i * 100}%)`;
+  try { localStorage.setItem(THEME_KEY, name); } catch (e) {}
+}
+
+// 첫 적용은 애니메이션 없이 (페이지 열자마자 썸이 미끄러지는 건 산만하다)
+(() => {
+  const saved = (() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })();
+  const thumb = document.getElementById('themeThumb');
+  const prev = thumb.style.transition;
+  thumb.style.transition = 'none';
+  setTheme(THEMES.includes(saved) ? saved : 'warm');
+  void thumb.offsetWidth;              // 강제 리플로우 — 이 시점까지의 변경은 애니메이션 대상에서 제외
+  thumb.style.transition = prev;
+})();
+</script>
+</body>
+</html>
