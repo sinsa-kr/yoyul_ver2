@@ -32,3 +32,9 @@ desktop.ini
 # 로컬에서 테스트 스크립트를 돌릴 경우
 node_modules/
 package-lock.json
+
+# Claude Code 권한 승인 캐시 — 개인·머신별 파일이라 공유하지 않는다.
+# 절대경로와 세션 폴더명이 그대로 들어가고, 커밋하면 이 리포를 여는 다른 사람에게도
+# 자동 승인이 적용돼 권한이 조용히 넓어진다. (.claude/skills 는 공유 대상이라 예외)
+.claude/settings.json
+.claude/settings.local.json

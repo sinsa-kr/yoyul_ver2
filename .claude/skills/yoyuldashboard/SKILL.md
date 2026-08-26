@@ -1,5 +1,5 @@
 ---
-name: dashboard
+name: yoyuldashboard
 description: 협력업체 요율산정 대시보드(요율산정_대시보드.html) 스타일로 단일 HTML 대시보드를 만들거나 수정할 때 사용. "대시보드 만들어줘", "요율산정 스타일로", "dashboard 추가/수정/업데이트" 같은 요청에 활성화. 기존 대시보드 파일 수정 작업에도 자동 적용.
 version: 1.0.0
 ---
