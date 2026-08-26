@@ -69,6 +69,41 @@
       약해 보이는 역전이 생겨 함께 조정. 단 --danger-bg 는 비교표 '과다' 셀과 공유하므로
       배너 전용 토큰(--alert-err-bg/line/tx)을 새로 두어 표에는 영향이 없다
     · 3개 테마 × 2개 배너 모두 글자 대비 WCAG AA 통과(최저 6.79) · 인쇄 시 밝은 배너 강제
+
+    [2026-08-26 개정] 직종 단가표(엑셀) 연동
+    · 업무 카드에 「직종」 검색 콤보박스 추가 — 고르면 시급이 일급÷8h 로 자동 입력된다
+      (172,068 ÷ 8 = 21,509 — 견적서의 시중노임단가 참고표와 원 단위로 일치)
+    · 표 공급: ① 사용자가 올린 표(localStorage) ② 리포의 단가표.xlsx 자동 fetch ③ 표 없음.
+      GitHub Pages 로 열면 팀 전원이 업로드 없이 쓰고, file:// 로 열면 조용히 ③으로 떨어져
+      업로드로 폴백한다. 표가 없으면 직종 칸이 숨겨져 종전 화면과 동일하다.
+    · 시급은 자동 입력 뒤에도 계속 편집 가능하다. 손으로 고치면 직종은 유지한 채 근거 줄이
+      「직접 수정」으로 바뀌고 「단가로 되돌리기」가 뜬다. 이 판정은 플래그가 아니라
+      현재 시급과 환산단가를 매번 비교해 내린다 — 저장본을 오갈 때 표시가 어긋나지 않도록.
+    · 엑셀 파싱은 열 이름을 유연하게 감지(직종/업무명 · 일급/단가/노임 · 산재율 선택).
+      헤더가 몇 행 아래에서 시작해도, 열 순서가 뒤바뀌어도, 숫자가 "172,068원" 문자열이어도 읽는다.
+    · 표 교체 시 직종이 지정된 업무의 시급을 일괄 갱신할지 묻는다 — 반기 갱신이 클릭 두 번.
+    · 환산 기준(÷N시간)을 바꾸면 표에서 온 시급은 따라가고, 손으로 고쳐둔 값은 그대로 둔다.
+    · 근거를 산출물에 기록 — 클립보드 머리말·업무 줄, 엑셀 요약 밴드·산정내역 「직종(단가표)」 행.
+      모두 값이 있을 때만 추가되어 미사용 시 출력이 종전과 완전히 같다.
+    · 저장 스키마에 wageTable·jobTitle 추가 (구버전 저장본은 두 키 없이도 정상 로드).
+      resetAll() 은 단가표를 지우지 않는다 — 입력값이 아니라 참조 자료이므로.
+
+    · 직종 검색은 이름뿐 아니라 해설에서도 찾는다 — '지게차'처럼 어느 직종명에도 없는 단어로도
+      고를 수 있다. 이름 일치를 앞에 두고, 해설로 걸린 항목엔 「해설」 배지를 붙인다.
+      목록 아래 고정 영역에 짚고 있는 직종의 해설 전문을 띄운다(행을 펼치면 ↑↓ 이동 시
+      목록이 출렁여서 따로 뒀다). 검색어 일치 부분은 강조하되, 해설은 엑셀에서 온 외부
+      데이터라 조각별로 이스케이프한 뒤 <mark> 만 끼워 넣는다.
+    · 실제 단가표(437행)를 넣어보고 파서 결함 2건을 고쳤다 —
+      ① 단가가 '-' 인 미공표 직종 174건을 통째로 버리고 있었다. 표의 40% 라
+         검색조차 안 됐다. 이제 목록에 남기고 「단가 미공표」로 표시하며,
+         선택해도 시급은 건드리지 않는다(직접 입력).
+      ② 동명이직 28건이 사라지고 있었다. 기술사는 분야별로 4개, 작업반장은 적용월별로 2개다.
+         적용월이 다르면 적용월을, 같으면 해설(분야)을 붙여 구분한다 — 238 → 437개 전부 보존.
+
+    [테스트] 회귀 하네스를 tests/ 로 옮겼다. 임시 폴더에 두었다가 두 번 유실된 뒤의 조치.
+      node tests/smoke.js · tests/excel.js · tests/browserCheck.js
+      단가표는 반기마다 교체되므로 브라우저 검사는 특정 직종명을 박지 않고
+      로드된 표에서 표본을 골라 검증한다. 교체 후 점검은 tests/realcheck.js.
   -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -390,6 +425,37 @@
     }
 
     /* 인쇄 — 결재/보고용 */
+    /* 직종 검색 콤보박스 — 타이핑하면 걸러지는 목록. 네이티브 select 로는
+       일급을 함께 보여줄 수 없고 팝업을 테마에 맞출 수 없어 자체 위젯으로 둔다 */
+    .job-wrap { position:relative; }
+    /* 팝업 = 스크롤되는 목록 + 하단 고정 미리보기.
+       좌측 컬럼이 overflow-y:auto 라 가로로 넓힐 수 없다(넘치면 잘림) —
+       그래서 해설 전문은 옆이 아니라 아래에 붙인다. */
+    .job-pop { position:absolute; z-index:50; left:0; right:0; top:calc(100% + 2px);
+               background:var(--panel); border:1px solid var(--line2); border-radius:6px;
+               box-shadow:0 6px 18px rgba(60,30,10,.22); display:none; overflow:hidden; }
+    .job-pop.on { display:block; }
+    .job-list { max-height:150px; overflow-y:auto; }
+    .job-prev { border-top:1px solid var(--line); background:var(--panel2); padding:6px 8px; }
+    .job-prev .t { font-size:11px; font-weight:700; color:var(--tx); }
+    .job-prev .n { font-size:10px; font-weight:400; color:var(--tx3); }
+    .job-prev .b { font-size:10.5px; color:var(--tx2); line-height:1.5; margin-top:3px;
+                   max-height:58px; overflow-y:auto; }
+    .job-opt mark, .job-prev mark { background:var(--am-bg); color:var(--am-tx);
+                                    padding:0 1px; border-radius:2px; }
+    .unp { color:var(--tx3); font-style:italic; }
+    .hitlbl { display:inline-block; font-size:9px; font-weight:700; color:var(--am-tx);
+              background:var(--am-bg); border-radius:3px; padding:0 3px; margin-right:3px; }
+    .job-opt { display:flex; justify-content:space-between; gap:8px; align-items:flex-start;
+               padding:5px 8px; font-size:11.5px; color:var(--tx); cursor:pointer; }
+    .job-opt:hover, .job-opt.sel { background:var(--chip); }
+    .job-opt .j { min-width:0; display:flex; flex-direction:column; gap:1px; }
+    /* 해설은 한 줄로 잘라 보여주고 전문은 title 툴팁으로 (목록이 길어지지 않게) */
+    .job-opt .d { color:var(--tx3); font-size:10px; line-height:1.35;
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .job-opt .w { color:var(--tx3); font-size:10.5px; white-space:nowrap; padding-top:1px; }
+    .job-empty { padding:7px 9px; font-size:10.5px; color:var(--tx3); }
+
     /* 테마 스위치 — 헤더 오른쪽 끝. 선택 표시(썸)가 미끄러지는 세그먼트 컨트롤 */
     .theme-sw { position:relative; display:grid; grid-template-columns:repeat(3,1fr); width:156px;
                 background:rgba(255,255,255,.12); padding:2px; border-radius:999px;
@@ -492,6 +558,26 @@
       <button onclick="$('jsonImport').click()" style="background:var(--btn-imp);color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📥 JSON 가져오기</button>
       <input type="file" id="jsonImport" accept=".json,application/json" style="display:none;" onchange="importJSON(this)">
       <span style="font-size:10px;color:var(--tx-mute);">현재 입력 상태를 파일로 백업 · 다른 PC/브라우저로 이동</span>
+    </div>
+  </div>
+</div>
+
+<!-- 단가표 목록 MODAL -->
+<div id="wtModal" onclick="if(event.target===this)closeWtModal()" style="display:none;position:fixed;inset:0;background:rgba(60,40,20,0.55);z-index:2000;align-items:center;justify-content:center;">
+  <div style="background:var(--panel);border-radius:14px;width:560px;max-width:94vw;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(60,30,10,.35);border:1px solid var(--line4);">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line3);display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:14px 14px 0 0;">
+      <div style="font-size:15px;font-weight:700;color:var(--tx);">💰 직종 단가표 <span id="wtModalBasis" style="font-size:11px;font-weight:400;color:var(--tx2);"></span></div>
+      <button onclick="closeWtModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--tx2);line-height:1;padding:2px 6px;">✕</button>
+    </div>
+    <div id="wtHoursRow" style="padding:11px 18px;border-bottom:1px solid var(--line3);background:var(--panel2);display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <label style="font-size:11px;color:var(--tx2);">환산 기준 — 일급 ÷</label>
+      <input type="number" id="wtHours" min="1" max="24" step="0.5" oninput="onWtHoursChange()" class="inp-r" style="width:56px;">
+      <span style="font-size:11px;color:var(--tx2);">시간 = 시급</span>
+      <span style="flex:1;"></span>
+      <span style="font-size:10px;color:var(--tx3);">시중노임단가는 1일 8시간 기준입니다</span>
+    </div>
+    <div style="padding:12px 18px 14px;flex:1;overflow-y:auto;">
+      <div id="wtList"></div>
     </div>
   </div>
 </div>
@@ -601,6 +687,23 @@
           <label style="font-size:10px;color:var(--tx2);">메모 <span style="color:var(--tx3);">— 산정 전제·특이사항</span></label>
           <textarea id="metaNote" rows="2" placeholder="예: 2026년 최저임금 기준, 야간수당 별도 협의분 미반영"
             class="inp" style="margin-top:2px;resize:vertical;line-height:1.5;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 직종 단가표 -->
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="sec-hdr" style="margin-bottom:0;">💰 직종 단가표</div>
+        <button onclick="toggleSec('wtSec','wtBtn')" id="wtBtn" style="font-size:11px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;">접기</button>
+      </div>
+      <div id="wtSec">
+        <div id="wtStatus"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+          <button onclick="openWtModal()" id="wtListBtn" style="background:var(--btn-save);color:white;border:none;padding:5px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">목록 보기</button>
+          <button onclick="$('wtImport').click()" style="background:var(--btn-imp);color:white;border:none;padding:5px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">📥 다른 표 올리기</button>
+          <button onclick="wtClearUpload()" id="wtResetBtn" style="display:none;background:var(--btn-reset);color:white;border:none;padding:5px 11px;border-radius:5px;font-size:11px;cursor:pointer;">기본 표로 복귀</button>
+          <input type="file" id="wtImport" accept=".xlsx,.xlsm,.xls" style="display:none;" onchange="importWageTable(this)">
         </div>
       </div>
     </div>
@@ -1093,6 +1196,341 @@ const pal = () => THEME_PALETTE[document.documentElement.dataset.theme] || THEME
 // 읽는 시점의 테마 배열을 그대로 돌려준다 — 인덱싱·length·map 이 전부 평범한 배열처럼 동작
 Object.defineProperty(window, 'WK_COLORS', { get: () => pal().wk });
 
+// ================================================================
+// 직종 단가표 — 엑셀에서 읽은 「직종 → 단가」 표. 시급 입력을 대신 채워주는 참조 자료.
+//   표준 양식: 직종명 · 단가 · 단위 · 기준 · 해설  (단위·기준·해설은 없어도 동작)
+//   로딩 순서: ① 사용자가 올린 표(localStorage) ② ./단가표.xlsx fetch ③ 표 없음
+//   ①이 있으면 ②를 덮는다 — 명시적으로 올린 표가 우선.
+//   file:// 로 열면 ②의 fetch 가 브라우저 정책에 막히므로 조용히 ③으로 떨어진다.
+// ================================================================
+const WT_KEY  = 'rateCalc_v1_wageTable';
+const WT_FILE = '단가표.xlsx';          // 리포 기본 표 (GitHub Pages 에서 자동 로드)
+const WT_HOURS_DEFAULT = 8;             // 시중노임단가는 1일 8시간 기준
+const WT_MONTH_HOURS   = 209;           // 월 단가 → 시급 (근기법상 월 통상임금 산정기준시간)
+
+let wageTable = null;   // { name, source, fileName, hoursPerDay, loadedAt, rows:[{job,dayWage,accidentRate}] }
+
+// 시급은 저장하지 않고 읽을 때마다 환산한다 — 환산 기준을 바꾸면 전체가 따라오고,
+// 같은 값이 두 곳에 저장돼 어긋나는 일이 없다. (172,068 ÷ 8 = 21,509 — 견적서 참고표와 일치)
+function wtHours()  { return wageTable?.hoursPerDay > 0 ? wageTable.hoursPerDay : WT_HOURS_DEFAULT; }
+function wtRows()   { return wageTable?.rows || []; }
+function wtFind(job) { return wtRows().find(r => r.job === job) || null; }
+function wtHas()    { return wtRows().length > 0; }
+
+// 단위별 환산 — 표에 「단위」열이 있으면 그대로 따른다.
+// 단위가 '시간'인 표를 8로 나누면 크게 틀리므로, 단위는 추측하지 않고 표에 적힌 값을 쓴다.
+// 단위가 없으면 '일'로 본다(시중노임단가 관례이자 이 대시보드의 기존 동작).
+function wtDivisor(unit) {
+  if (unit === 'hour')  return 1;
+  if (unit === 'month') return WT_MONTH_HOURS;
+  return wtHours();                        // 'day' 또는 미지정
+}
+function wtHourlyOf(row) { return (row && !row.unpriced) ? Math.round(row.dayWage / wtDivisor(row.unit)) : null; }
+function wtRateOf(job)   { return wtHourlyOf(wtFind(job)); }
+
+// 화면에 보여줄 환산 설명 — "172,068원/일 ÷ 8h" · "21,509원/시간"
+const WT_UNIT_LBL = { day: '일', hour: '시간', month: '월' };
+function wtUnitLabel(row) { return WT_UNIT_LBL[row?.unit] || '일'; }
+function wtConvText(row) {
+  if (!row) return '';
+  if (row.unpriced) return '단가 미공표';
+  const amt = `${fmtn(row.dayWage)}원/${wtUnitLabel(row)}`;
+  if (row.unit === 'hour')  return amt;                            // 이미 시급
+  if (row.unit === 'month') return `${amt} ÷ ${WT_MONTH_HOURS}h`;
+  return `${amt} ÷ ${wtHours()}h`;
+}
+// 표에 일(日) 단위 행이 하나라도 있어야 「÷ N시간」 설정이 의미를 가진다
+function wtHasDayRows() { return wtRows().some(r => !r.unpriced && (r.unit || 'day') === 'day'); }
+
+function wtSave() {
+  try { localStorage.setItem(WT_KEY, JSON.stringify(wageTable)); } catch (e) {}
+}
+function wtLoadStored() {
+  try {
+    const o = JSON.parse(localStorage.getItem(WT_KEY) || 'null');
+    return (o && Array.isArray(o.rows) && o.rows.length) ? o : null;
+  } catch (e) { return null; }
+}
+
+// ── 엑셀 파싱 ────────────────────────────────────────────
+// 서식이 제각각이라 고정 위치를 가정하지 않는다. 앞 10행에서 헤더를 찾고, 없으면 다음 시트로.
+const WT_COL = {
+  job:  ['직종', '직종명', '업무', '업무명', '공종', '구분', '명칭'],
+  wage: ['일급', '일당', '단가', '노임', '금액'],
+  unit: ['단위'],
+  basis:['기준', '적용월', '적용일'],
+  desc: ['해설', '설명', '비고', '내용'],
+  acc:  ['산재'],
+};
+// 「단위」칸의 표기를 정규화 — 일/일급/日 · 시간/시/h · 월/월급
+function wtUnitOf(v) {
+  const t = wtNorm(v);
+  if (!t) return null;
+  if (/(시간|시급|^시$|hour|^h$|hr)/.test(t)) return 'hour';
+  if (/(^월|월급|month|^m$)/.test(t))         return 'month';
+  if (/(^일|일급|일당|day|^d$)/.test(t))      return 'day';
+  return null;                                  // 모르는 표기는 비워두고 기본값(일)을 쓴다
+}
+const wtNorm = s => String(s ?? '').replace(/\s+/g, '').toLowerCase();
+// "172,068원" → 172068 (엑셀에서 숫자가 문자열로 들어오는 경우 대응)
+const wtNum  = v => {
+  if (typeof v === 'number') return v;
+  const n = parseFloat(String(v ?? '').replace(/[,\s원%]/g, ''));
+  return Number.isFinite(n) ? n : NaN;
+};
+const wtColIdx = (cells, cands) =>
+  cells.findIndex(c => { const t = wtNorm(c); return t && cands.some(k => t.includes(k)); });
+
+function wtParseWorkbook(wb) {
+  for (const sheetName of wb.SheetNames) {
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+    for (let h = 0; h < Math.min(10, aoa.length); h++) {
+      const iJob  = wtColIdx(aoa[h], WT_COL.job);
+      const iWage = wtColIdx(aoa[h], WT_COL.wage);
+      if (iJob < 0 || iWage < 0) continue;
+      const iAcc   = wtColIdx(aoa[h], WT_COL.acc);
+      const iUnit  = wtColIdx(aoa[h], WT_COL.unit);
+      const iBasis = wtColIdx(aoa[h], WT_COL.basis);
+      const iDesc  = wtColIdx(aoa[h], WT_COL.desc);
+
+      const rows = [], bases = [];
+      for (let r = h + 1; r < aoa.length; r++) {
+        const job = String(aoa[r][iJob] ?? '').trim();
+        if (!job) continue;                                   // 빈 행·구분선
+        const day = wtNum(aoa[r][iWage]);
+        const acc = iAcc >= 0 ? wtNum(aoa[r][iAcc]) : NaN;
+        const basis = iBasis >= 0 ? String(aoa[r][iBasis] ?? '').trim() : '';
+        if (basis) bases.push(basis);
+        // 단가가 '-' 인 행은 「미공표」 직종이다. 실제 표의 40% 가 여기 해당하므로
+        // 버리지 않고 남겨 검색에는 걸리게 하되, 시급 자동 입력만 하지 않는다.
+        const priced = Number.isFinite(day) && day > 0;
+        rows.push({
+          job, dayWage: priced ? day : null, unpriced: !priced,
+          unit: iUnit >= 0 ? wtUnitOf(aoa[r][iUnit]) : null,
+          desc: iDesc >= 0 ? String(aoa[r][iDesc] ?? '').trim() : '',
+          basis,
+          accidentRate: Number.isFinite(acc) && acc > 0 ? acc : null,
+        });
+      }
+      if (!rows.length) continue;
+
+      // 동명이직 처리 — 같은 이름이 분야·적용월만 달리해 여러 번 나온다
+      // (작업반장 건설 215,907 / 제조 147,122 · 기술사 전기 / 건설 …).
+      // 첫 행만 남기면 나머지를 고를 방법이 없으므로, 구분자를 붙여 전부 살린다.
+      const byName = rows.reduce((m, r) => ((m[r.job] = m[r.job] || []).push(r), m), {});
+      let dup = 0;
+      for (const [name, group] of Object.entries(byName)) {
+        if (group.length < 2) continue;
+        dup += group.length - 1;
+        const variedBasis = new Set(group.map(r => r.basis)).size > 1;
+        group.forEach((r, i) => {
+          const q = (variedBasis && r.basis) ? r.basis
+                  : (r.desc ? (r.desc.length > 24 ? r.desc.slice(0, 24) + '…' : r.desc) : `#${i + 1}`);
+          r.job = `${name} (${q})`;
+        });
+      }
+      // 구분자를 붙였는데도 겹치면(내용이 완전히 같은 행) 순번으로 마무리한다
+      const used = new Set();
+      for (const r of rows) {
+        let name = r.job, k = 2;
+        while (used.has(name)) name = `${r.job} #${k++}`;
+        used.add(name); r.job = name;
+      }
+
+      // 「기준」은 표 전체의 성격이라 가장 많이 나온 값을 대표로 삼는다
+      const tally = bases.reduce((m, b) => (m[b] = (m[b] || 0) + 1, m), {});
+      const basis = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || '';
+      const unpriced = rows.filter(r => r.unpriced).length;
+      return { rows, sheetName, dup, unpriced, skipped: 0, basis };
+    }
+  }
+  const err = new Error('직종명 열과 일급 열을 찾지 못했습니다.\n헤더에 「직종·업무명」 중 하나와 「일급·단가·노임」 중 하나가 있어야 합니다.');
+  err.wtParse = true;
+  throw err;
+}
+
+// ── 표 적용 ──────────────────────────────────────────────
+function wtApply(parsed, meta) {
+  wageTable = {
+    name: meta.name, source: meta.source, fileName: meta.fileName,
+    basis: parsed.basis || '',                     // 표의 「기준」열 (예: 2026년 01월)
+    hoursPerDay: meta.hoursPerDay ?? WT_HOURS_DEFAULT,
+    loadedAt: new Date().toISOString(),
+    rows: parsed.rows,
+  };
+  if (meta.source === 'upload') wtSave();
+  renderWtPanel();
+  refreshAllJobPickers();
+}
+
+// 리포에 함께 둔 기본 표를 읽는다. file:// 에서는 브라우저가 막으므로 조용히 포기한다.
+async function wtFetchRepo() {
+  if (typeof XLSX === 'undefined') return false;
+  try {
+    const res = await fetch(WT_FILE, { cache: 'no-cache' });
+    if (!res.ok) return false;
+    const parsed = wtParseWorkbook(XLSX.read(await res.arrayBuffer(), { type: 'array' }));
+    wtApply(parsed, { name: parsed.sheetName || '기본 단가표', source: 'repo', fileName: WT_FILE });
+    return true;
+  } catch (e) { return false; }   // file:// 차단 · 파일 없음 · 파싱 실패 모두 "표 없음"으로
+}
+
+function wtInit() {
+  const stored = wtLoadStored();
+  if (stored) { wageTable = stored; renderWtPanel(); refreshAllJobPickers(); return; }
+  renderWtPanel();
+  wtFetchRepo();          // 비동기 — 도착하면 renderWtPanel/refreshAllJobPickers 가 다시 돈다
+}
+
+function wtClearUpload() {
+  if (!confirm('직접 올린 단가표를 지우고 기본 표로 되돌릴까요?')) return;
+  try { localStorage.removeItem(WT_KEY); } catch (e) {}
+  wageTable = null;
+  renderWtPanel();
+  refreshAllJobPickers();
+  wtFetchRepo();
+}
+
+// ── 패널 · 목록 모달 ─────────────────────────────────────
+function renderWtPanel() {
+  const el = $('wtStatus');
+  if (!el) return;
+  const upload = wageTable?.source === 'upload';
+  const setBtn = (id, on) => { const b = $(id); if (b) b.style.display = on ? '' : 'none'; };
+  setBtn('wtResetBtn', upload);
+  setBtn('wtListBtn', wtHas());
+  if (!wtHas()) {
+    el.innerHTML = `<div style="font-size:11px;color:var(--tx3);line-height:1.6;background:var(--inset);border-radius:6px;padding:8px 10px;">
+      단가표가 없습니다.<br>엑셀을 올리면 업무 카드에서 <b>직종을 골라 시급을 채울 수</b> 있습니다.</div>`;
+    return;
+  }
+  const badge = upload
+    ? `<span style="font-size:9.5px;font-weight:700;color:var(--am-tx);background:var(--am-bg);border-radius:4px;padding:1px 6px;">직접 올린 표</span>`
+    : `<span style="font-size:9.5px;font-weight:700;color:var(--tag-ok-tx);background:var(--ok-bg);border-radius:4px;padding:1px 6px;">기본 표</span>`;
+  el.innerHTML = `<div style="background:var(--inset);border-radius:6px;padding:8px 10px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+      <span style="font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(wageTable.name)}</span>${badge}
+    </div>
+    <div style="font-size:10px;color:var(--tx3);">${wtRows().length}개 직종${(() => { const u = wtRows().filter(r => r.unpriced).length; return u ? ` (미공표 ${u})` : ''; })()}${wtHasDayRows() ? ` · 일급 ÷ ${wtHours()}h` : ''}${wageTable.basis ? ` · ${esc(wageTable.basis)} 기준` : ''}</div>
+  </div>`;
+}
+
+function openWtModal() {
+  if (!wtHas()) return;
+  $('wtHours').value = wtHours();
+  // 「÷ N시간」은 일(日) 단가에만 의미가 있다 — 시간·월 단가뿐이면 숨긴다
+  $('wtHoursRow').style.display = wtHasDayRows() ? 'flex' : 'none';
+  $('wtModalBasis').textContent = wageTable.basis ? `· ${wageTable.basis} 기준` : '';
+  renderWtList();
+  $('wtModal').style.display = 'flex';
+}
+function closeWtModal() { $('wtModal').style.display = 'none'; }
+
+function renderWtList() {
+  const rows = wtRows();
+  const COLS = '1fr 92px 40px 88px';
+  $('wtList').innerHTML = `
+    <div style="display:grid;grid-template-columns:${COLS};font-size:10.5px;font-weight:700;color:var(--tx2);padding:6px 8px;background:var(--chip);border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;">
+      <span>직종</span><span style="text-align:right;">단가 (원)</span><span style="text-align:center;">단위</span><span style="text-align:right;">시급 (원)</span>
+    </div>
+    <div style="border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;">
+      ${rows.map((r, i) => {
+        const h = wtHourlyOf(r), low = h != null && h < MIN_WAGE;
+        return `<div style="display:grid;grid-template-columns:${COLS};font-size:12px;padding:5px 8px;border-bottom:1px solid var(--line-row);${i%2?'background:var(--panel2);':''}">
+          <span style="min-width:0;">
+            <span style="color:var(--tx);">${esc(r.job)}</span>
+            ${r.desc ? `<span style="display:block;font-size:10px;color:var(--tx3);line-height:1.35;">${esc(r.desc)}</span>` : ''}
+          </span>
+          <span style="text-align:right;color:var(--tx2);">${r.unpriced ? '—' : fmtn(r.dayWage)}</span>
+          <span style="text-align:center;color:var(--tx3);font-size:10.5px;">${r.unpriced ? '—' : wtUnitLabel(r)}</span>
+          <span style="text-align:right;font-weight:600;color:${r.unpriced ? 'var(--tx3)' : low ? 'var(--danger)' : 'var(--accent)'}" ${low ? 'title="최저임금 미만입니다"' : ''}>${r.unpriced ? '미공표' : fmtn(h) + (low ? ' ⚠' : '')}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// 환산 기준을 바꾸면 표에서 가져온 시급도 함께 따라간다 (표는 일급만 갖고 있다).
+// 단, 사용자가 손으로 고쳐둔 시급은 건드리지 않는다 — 이전 기준값과 같을 때만 갱신.
+function onWtHoursChange() {
+  const h = gv('wtHours');
+  if (!(h > 0) || !wageTable) return;
+  const prev = wtHours();
+  if (h === prev) return;
+  const wasOnTable = workIdsInOrder().filter(id => {
+    const r = wtFind($(`wJob_${id}`)?.value.trim());
+    // 일(日) 단가만 ÷N시간의 영향을 받는다
+    return r && !r.unpriced && (r.unit || 'day') === 'day' && gv(`wRate_${id}`) === Math.round(r.dayWage / prev);
+  });
+  wageTable.hoursPerDay = h;
+  if (wageTable.source === 'upload') wtSave();
+  for (const id of wasOnTable) {
+    const r = wtFind($(`wJob_${id}`).value.trim());
+    $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+  }
+  renderWtList();
+  renderWtPanel();
+  workIdsInOrder().forEach(id => renderJobNote(id));
+  calculate();
+}
+
+// ── 업로드 ───────────────────────────────────────────────
+function importWageTable(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = wtParseWorkbook(XLSX.read(new Uint8Array(reader.result), { type: 'array' }));
+      const before = wtSnapshotJobs();            // 교체 전 시급 — 일괄 갱신 안내용
+      wtApply(parsed, {
+        name: file.name.replace(/\.(xlsx|xlsm|xls)$/i, ''),
+        source: 'upload', fileName: file.name,
+        hoursPerDay: wageTable?.hoursPerDay ?? WT_HOURS_DEFAULT,
+      });
+      const notes = [`단가표를 적용했습니다 — ${parsed.rows.length}개 직종.`];
+      if (parsed.dup)      notes.push(`같은 이름의 직종 ${parsed.dup}건은 분야·적용월을 붙여 구분했습니다.`);
+      if (parsed.unpriced) notes.push(`단가가 미공표(-)인 ${parsed.unpriced}건은 검색에는 나오지만 시급이 자동 입력되지 않습니다.`);
+      const low = parsed.rows.filter(r => !r.unpriced && wtHourlyOf(r) < MIN_WAGE);
+      if (low.length) notes.push(`⚠ 환산 시급이 최저임금 미만인 직종이 ${low.length}건 있습니다.`);
+      alert(notes.join('\n'));
+      applyWageTableToAll(before);
+    } catch (e) {
+      alert(e.wtParse ? e.message : '엑셀 파일을 읽을 수 없습니다: ' + e.message);
+    }
+    input.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// 표 교체 직전의 「직종이 지정된 업무」와 그 시급 — 갱신 전후를 보여주기 위해
+function wtSnapshotJobs() {
+  return workIdsInOrder()
+    .map(id => ({ id, job: $(`wJob_${id}`)?.value || '', rate: gv(`wRate_${id}`) }))
+    .filter(x => x.job);
+}
+
+// 반기 갱신 — 직종이 지정된 업무의 시급을 새 표 값으로 일괄 교체
+function applyWageTableToAll(before) {
+  if (!before?.length) return;
+  const hit  = before.filter(x => wtFind(x.job) && !wtFind(x.job).unpriced);
+  const miss = before.filter(x => !wtFind(x.job) || wtFind(x.job).unpriced);
+  if (!hit.length) {
+    if (miss.length) alert(`기존 업무 ${miss.length}건의 직종이 새 표에 없어 시급을 갱신하지 않았습니다.`);
+    return;
+  }
+  const lines = hit.slice(0, 8).map(x => `  ${x.job}  ${fmtn(x.rate)} → ${fmtn(wtRateOf(x.job))}`);
+  if (hit.length > 8) lines.push(`  … 외 ${hit.length - 8}건`);
+  const tail = miss.length ? `\n\n※ ${miss.length}건은 새 표에 직종이 없어 제외됩니다.` : '';
+  if (!confirm(`직종이 지정된 업무 ${hit.length}건의 시급도 새 단가로 갱신할까요?\n\n${lines.join('\n')}${tail}`)) return;
+  for (const x of hit) {
+    $(`wRate_${x.id}`).value = fmtn(wtRateOf(x.job));
+    const r = wtFind(x.job);
+    if (r?.accidentRate != null && $(`wAcc_${x.id}`)) $(`wAcc_${x.id}`).value = r.accidentRate;
+  }
+  calculate();
+}
+
 const WF_ITEMS = [
   {id:'wf_meal',   lbl:'식대'},
   {id:'wf_trans',  lbl:'교통비'},
@@ -1281,10 +1719,23 @@ function addWork(p, atTop = false) {
       </select>
       <button onclick="removeWork(${id})" style="color:var(--danger);background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;" title="삭제">✕</button>
     </div>
+    <div id="wJobRow_${id}" style="display:none;margin-bottom:7px;">
+      <label style="font-size:10px;color:var(--tx2);">직종 (단가표)</label>
+      <div class="job-wrap" style="margin-top:2px;">
+        <input type="text" id="wJob_${id}" value="${esc(p.jobTitle || '')}" placeholder="직종 검색 — 비우면 직접입력"
+          autocomplete="off" onfocus="openJobList(${id})" oninput="openJobList(${id})"
+          onkeydown="onJobKey(event,${id})" onblur="onJobBlur(${id})"
+          style="width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px;outline:none;box-sizing:border-box;background:var(--panel);color:var(--tx);">
+        <div class="job-pop" id="wJobPop_${id}">
+          <div class="job-list" id="wJobList_${id}"></div>
+          <div class="job-prev" id="wJobPrev_${id}" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr;gap:6px;margin-bottom:7px;">
       <div>
         <label style="font-size:10px;color:var(--tx2);">시급 (원)</label>
-        <input type="text" inputmode="numeric" id="wRate_${id}" value="${fmtn(p.hourlyRate)}" oninput="fmtMoney(this);calculate()"
+        <input type="text" inputmode="numeric" id="wRate_${id}" value="${fmtn(p.hourlyRate)}" oninput="fmtMoney(this);renderJobNote(${id});calculate()"
           style="width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:var(--panel);">
         <div id="wWarn_${id}" style="display:none;font-size:10px;color:var(--danger);margin-top:1px;">⚠ 최저임금 미만</div>
       </div>
@@ -1299,6 +1750,7 @@ function addWork(p, atTop = false) {
           style="width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:var(--panel);">
       </div>
     </div>
+    <div id="wJobNote_${id}" style="display:none;font-size:10px;line-height:1.5;margin:-3px 0 7px;"></div>
     <div style="background:var(--inset);border-radius:5px;padding:7px 8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
         <div style="font-size:10px;color:var(--tx-in);font-weight:600;">월 근무시간 — 교대형태 선택 시 자동입력, 직접 수정 가능</div>
@@ -1338,7 +1790,182 @@ function addWork(p, atTop = false) {
   const list = $('workList');
   if (atTop) list.insertBefore(div, list.firstChild);
   else list.appendChild(div);
+  // 단가표가 있을 때만 직종 칸을 노출한다 (없으면 종전 화면과 동일)
+  if (wtHas()) $(`wJobRow_${id}`).style.display = 'block';
+  $(`wJob_${id}`).dataset.lastJob = (p.jobTitle || '').trim();
+  renderJobNote(id);
   calculate();
+}
+
+// ================================================================
+// 직종 검색 콤보박스 — 업무 카드의 직종 칸
+// ================================================================
+let jobSelIdx = -1;                     // 목록에서 키보드로 짚고 있는 행
+
+// 직종명뿐 아니라 해설에서도 찾는다 — '지게차'·'십장'처럼 이름에 없는 단어로도 고를 수 있게.
+// 이름 일치를 앞에 두어, 정확한 이름을 아는 사람의 결과가 뒤로 밀리지 않게 한다.
+function jobMatches(q) {
+  const t = wtNorm(q);
+  if (!t) return wtRows().map(r => ({ r, hit: 'job' }));
+  const byJob = [], byDesc = [];
+  for (const r of wtRows()) {
+    if (wtNorm(r.job).includes(t)) byJob.push({ r, hit: 'job' });
+    else if (r.desc && wtNorm(r.desc).includes(t)) byDesc.push({ r, hit: 'desc' });
+  }
+  return byJob.concat(byDesc);
+}
+
+// 검색어와 일치한 부분만 강조. 해설은 엑셀에서 온 외부 데이터라
+// 반드시 조각별로 이스케이프한 뒤 우리가 만든 <mark> 만 끼워 넣는다.
+function wtHi(text, q) {
+  const s = String(text ?? '');
+  const needle = String(q ?? '').trim();
+  if (!needle) return esc(s);
+  const i = s.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return esc(s);                       // 공백 무시 매칭 등으로 원문에서 못 찾으면 강조 생략
+  return esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + needle.length)) + '</mark>'
+       + esc(s.slice(i + needle.length));
+}
+
+const jobListCache = {};   // 업무 id → 현재 표시 중인 후보 목록 (미리보기가 참조)
+
+function openJobList(id) {
+  const pop = $(`wJobPop_${id}`), box = $(`wJobList_${id}`);
+  if (!pop || !box || !wtHas()) return;
+  const q = $(`wJob_${id}`).value;
+  const list = jobMatches(q).slice(0, 60);
+  jobListCache[id] = list;
+  jobSelIdx = -1;
+  box.innerHTML = list.length
+    ? list.map(({ r, hit }, i) => `<div class="job-opt" data-job="${esc(r.job)}" data-i="${i}"
+        onmousedown="onJobPick(${id},this.dataset.job)" onmouseenter="showJobPrev(${id},${i})">
+        <span class="j"><b>${wtHi(r.job, q)}</b>${r.desc
+          ? `<span class="d">${hit === 'desc' ? '<span class="hitlbl">해설</span>' : ''}${wtHi(r.desc, q)}</span>` : ''}</span>
+        <span class="w">${r.unpriced ? '<span class="unp">단가 미공표</span>' : `${fmtn(r.dayWage)}원/${wtUnitLabel(r)}`}</span></div>`).join('')
+    : `<div class="job-empty">일치하는 직종이 없습니다 — 비워두면 시급을 직접 입력합니다</div>`;
+  showJobPrev(id, list.length ? 0 : -1);
+  pop.classList.add('on');
+}
+
+// 목록 아래 고정 영역에 짚고 있는 직종의 해설 전문을 띄운다.
+// 행을 펼치지 않고 따로 두는 이유: ↑↓ 이동 중 행 높이가 바뀌면 목록이 출렁인다.
+function showJobPrev(id, i) {
+  const el = $(`wJobPrev_${id}`);
+  if (!el) return;
+  const item = (jobListCache[id] || [])[i];
+  if (!item) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const r = item.r, q = $(`wJob_${id}`)?.value || '';
+  el.style.display = 'block';
+  el.innerHTML =
+    `<div class="t">${wtHi(r.job, q)} <span class="n">· ${r.unpriced ? '단가 미공표 — 시급 직접 입력' : `${wtConvText(r)} = ${fmtn(wtHourlyOf(r))}원`}</span></div>`
+    + (r.desc ? `<div class="b">${wtHi(r.desc, q)}</div>`
+              : `<div class="b" style="color:var(--tx3);">해설 없음</div>`);
+}
+
+function closeJobList(id) { $(`wJobPop_${id}`)?.classList.remove('on'); jobSelIdx = -1; }
+
+function onJobKey(e, id) {
+  const pop = $(`wJobPop_${id}`), box = $(`wJobList_${id}`);
+  if (!pop || !box) return;
+  const opts = [...box.querySelectorAll('.job-opt')];
+  if (e.key === 'Escape') { closeJobList(id); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!pop.classList.contains('on')) { openJobList(id); return; }
+    if (!opts.length) return;
+    jobSelIdx = (jobSelIdx + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length;
+    opts.forEach((o, i) => o.classList.toggle('sel', i === jobSelIdx));
+    opts[jobSelIdx].scrollIntoView({ block: 'nearest' });
+    showJobPrev(id, jobSelIdx);          // 짚은 항목의 해설을 하단에 함께 갱신
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const pick = opts[jobSelIdx] || (opts.length === 1 ? opts[0] : null);
+    if (pick) onJobPick(id, pick.dataset.job);
+  }
+}
+
+// 목록에서 고름 → 시급(과 산재율)을 채운다. 시급 칸은 여전히 편집 가능하다.
+function onJobPick(id, job) {
+  const r = wtFind(job);
+  const el = $(`wJob_${id}`);
+  el.value = job;
+  el.dataset.lastJob = job;      // 이후 잘못된 입력이 들어오면 여기로 되돌아온다
+  closeJobList(id);
+  if (r && !r.unpriced) {
+    $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+    if (r.accidentRate != null && $(`wAcc_${id}`)) $(`wAcc_${id}`).value = r.accidentRate;
+  }
+  renderJobNote(id);
+  calculate();
+}
+
+// 입력칸을 확정한다 — 표에 없는 문자열이면 직전 선택으로 되돌린다.
+// 표에 없는 직종명이 근거로 남아 결재 문서에 나가는 걸 막는다.
+function resolveJobInput(id) {
+  closeJobList(id);
+  const el = $(`wJob_${id}`);
+  if (!el) return;
+  const v = el.value.trim();
+  if (v && !wtFind(v)) el.value = el.dataset.lastJob || '';
+  else el.dataset.lastJob = v;
+  renderJobNote(id);
+  calculate();
+}
+
+// 목록을 mousedown 으로 고르는 경우보다 늦게 판정해야 선택이 취소되지 않는다
+function onJobBlur(id) { setTimeout(() => resolveJobInput(id), 120); }
+
+// 근거 한 줄 — 표시가 실제 시급과 어긋난 채 결재 문서로 나가지 않도록,
+// 「직접 수정」 여부를 플래그가 아니라 현재 값 비교로 매번 판정한다.
+function renderJobNote(id) {
+  const note = $(`wJobNote_${id}`);
+  const el   = $(`wJob_${id}`);
+  if (!note || !el) return;
+  const job = el.value.trim();
+  if (!job) { note.style.display = 'none'; note.innerHTML = ''; return; }
+
+  const r = wtFind(job);
+  if (!r) {                              // 저장본에는 있으나 현재 표에 없는 직종
+    note.style.display = 'block';
+    note.innerHTML = `<span style="color:var(--warn);">⚠ ${esc(job)} — 현재 단가표에 없는 직종입니다 (시급은 직접 입력값)</span>`;
+    return;
+  }
+  if (r.unpriced) {
+    note.style.display = 'block';
+    note.innerHTML = `<span style="color:var(--tx3);">📋 ${esc(job)} · 단가 미공표 — 시급은 직접 입력합니다</span>`;
+    return;
+  }
+  const base = wtHourlyOf(r);
+  const cur  = gv(`wRate_${id}`);
+  const same = cur === base;
+  note.style.display = 'block';
+  const tip = r.desc ? ` title="${esc(r.desc)}"` : '';
+  note.innerHTML = same
+    ? `<span style="color:var(--tx3);"${tip}>📋 ${esc(job)} · ${wtConvText(r)} = ${fmtn(base)}원</span>`
+    : `<span style="color:var(--am-tx);">✏️ ${esc(job)} 기준 ${fmtn(base)}원 → 직접 수정 ${fmtn(cur)}원</span>
+       <button type="button" onclick="revertToTableRate(${id})" style="margin-left:5px;font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">단가로 되돌리기</button>`;
+}
+
+function revertToTableRate(id) {
+  const r = wtFind($(`wJob_${id}`)?.value.trim());
+  if (!r) return;
+  $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+  renderJobNote(id);
+  calculate();
+}
+
+// 표가 도착·교체될 때 모든 업무 카드의 직종 칸을 다시 맞춘다
+function refreshAllJobPickers() {
+  const on = wtHas();
+  for (const id of workIdsInOrder()) {
+    const row = $(`wJobRow_${id}`);
+    if (row) row.style.display = on ? 'block' : 'none';
+    const el = $(`wJob_${id}`);
+    if (el) el.dataset.lastJob = el.value.trim();
+    renderJobNote(id);
+  }
 }
 
 function removeWork(id) {
@@ -1677,6 +2304,7 @@ function collectWorks() {
     items.push({
       id: i,
       otExempt,
+      jobTitle:      $(`wJob_${i}`)?.value.trim() || '',
       name:          $(`wName_${i}`)?.value || `업무 ${i}`,
       shiftType:     $(`wShift_${i}`)?.value || 'day',
       hourlyRate:    rate,
@@ -2658,12 +3286,15 @@ function copyResult() {
     `산정일: ${new Date().toLocaleDateString('ko-KR')} (${BASE_YEAR}년 법정 기준)`,
     ...(m.author ? [`작성자: ${m.author}`] : []),
     ...(m.note ? [`메모: ${m.note}`] : []),
+    ...(wtHas() ? [`단가표: ${wageTable.name}${wageTable.basis ? ` · ${wageTable.basis} 기준` : ''}${wtHasDayRows() ? ` (일급÷${wtHours()}h)` : ''}`] : []),
     '',
     '[적용 비율]',
     `퇴직충당금 ${gv('rRet')}% | 국민연금 ${gv('rNP')}% | 건강보험 ${gv('rHI')}% | 장기요양 ${gv('rLT')}% | 실업급여 ${gv('rEI1')}% | 고용안정·직업능력개발 ${gv('rEI2')}% | 관리비율 ${gv('mgmtRate')}%`,
     '',
     '[업무별 결과]',
-    ...results.map(r => `${r.name} | ${SHIFT_LABELS[r.shiftType]||''} | ${r.headcount}명 | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
+    ...results.map(r => `${r.name} | ${SHIFT_LABELS[r.shiftType]||''} | ${r.headcount}명`
+      + (r.jobTitle && wtFind(r.jobTitle) ? ` | 직종 ${r.jobTitle}(${wtFind(r.jobTitle).unpriced ? '단가 미공표' : `${fmtn(wtFind(r.jobTitle).dayWage)}원/${wtUnitLabel(wtFind(r.jobTitle))}`})` : '')
+      + ` | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
     '',
     `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
   ];
@@ -3061,6 +3692,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   const metaBits = [];
   if (metaPeriod(meta)) metaBits.push(`계약기간 ${metaPeriod(meta)}`);
   if (meta.author)      metaBits.push(`작성자 ${meta.author}`);
+  if (wtHas())          metaBits.push(`단가표 ${wageTable.name}${wageTable.basis ? ` · ${wageTable.basis} 기준` : ''}${wtHasDayRows() ? ` (일급÷${wtHours()}h)` : ''}`);
   if (meta.note)        metaBits.push(`메모: ${meta.note}`);
   if (metaBits.length) r = X.band(metaBits.join(' · '), NC, S.subTitle, 18);
   X.push(); X.h(X.rows - 1, 6);
@@ -3337,6 +3969,14 @@ function buildDetailSheet(base, cin) {
   X.stR(hdrRow, 0, NC-1, S.colHdr); X.h(hdrRow, 30);
   const RM = {};
   RM.shift = row('교대형태', '—', w => SHIFT_LABELS[w.shiftType] || w.shiftType);
+  // 단가표에서 시급을 가져온 업무가 하나라도 있을 때만 근거 행을 넣는다
+  // (안 쓰면 시트 구조가 종전과 완전히 같다)
+  if (results.some(w => w.jobTitle && wtFind(w.jobTitle))) {
+    RM.job = row('직종 (단가표)', '—', w => {
+      const t = wtFind(w.jobTitle);
+      return t ? `${w.jobTitle} · ${t.unpriced ? '단가 미공표' : `${fmtn(t.dayWage)}원/${wtUnitLabel(t)}`}` : '—';
+    });
+  }
 
   band('근무 조건 — 노란 배경 칸만 직접 입력', S.secBlue);
   RM.rate    = row('시급',     '원/h', w => w.hourlyRate,       'data', WON, true);
@@ -3762,6 +4402,7 @@ function collectState() {
       holFlatRate:   gv(`wHolRate_${i}`),
       weeklyRest:    gc(`wRest_${i}`),
       exempt:        gc(`wExempt_${i}`),
+      jobTitle:      $(`wJob_${i}`)?.value.trim() || '',
       customPattern: pattern ? JSON.parse(pattern) : null,
     });
   }
@@ -3777,6 +4418,7 @@ function collectState() {
   const welfareCustom = collectWelfareCustom();
   return {
     meta: collectMeta(),
+    wageTable,                       // 그때 쓰던 단가표까지 담아 옛 산정안을 그대로 재현한다
     rates: { rNP: gv('rNP'), rHI: gv('rHI'), rLT: gv('rLT'), rEI1: gv('rEI1'), rEI2: gv('rEI2'), rAcc: gv('rAcc'), rRet: gv('rRet'), mgmtRate: gv('mgmtRate') },
     welfare, welfareCustom, fixed, works,
     vendor: collectVendorState(),
@@ -3823,6 +4465,13 @@ function applyState(state) {
 
   applyMeta(state.meta);   // 구버전 저장본은 meta 가 없음 → 전부 빈 값으로 초기화
 
+  // 단가표는 업무보다 먼저 세운다 — addWork 가 직종 칸 노출 여부를 여기에 기대고 있다
+  if (state.wageTable?.rows?.length) {
+    wageTable = state.wageTable;
+    if (wageTable.source === 'upload') wtSave();
+    renderWtPanel();
+  }
+
   if (state.rates) {
     ['rNP','rHI','rLT','rEI1','rEI2','rAcc','rRet','mgmtRate'].forEach(k => { if (state.rates[k] !== undefined && $(k)) $(k).value = state.rates[k]; });
   }
@@ -3856,6 +4505,7 @@ function applyState(state) {
     for (const w of state.works) addWork(w);
   }
   applyVendorState(state.vendor);   // 구버전 저장본은 undefined → 비교 탭 빈 상태
+  refreshAllJobPickers();
   calculate();
 }
 
@@ -4015,6 +4665,8 @@ $('minWageAlert').textContent =
 sbBuildTimeOptions();
 sbPaintSwatches();
 renderMetaLine();
+// 단가표는 참조 자료라 resetAll() 로도 지워지지 않는다 — 삭제는 패널의 「기본 표로 복귀」로만
+wtInit();
 
 addWork({
   name: '경비', shiftType: 'alternate', hourlyRate: MIN_WAGE,
