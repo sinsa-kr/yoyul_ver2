@@ -436,10 +436,19 @@
                box-shadow:0 6px 18px rgba(60,30,10,.22); display:none; overflow:hidden; }
     .job-pop.on { display:block; }
     .job-list { max-height:150px; overflow-y:auto; }
-    .job-prev { border-top:1px solid var(--line); background:var(--panel2); padding:6px 8px; }
+    /* 미리보기는 목록에 이어지는 또 하나의 행처럼 보이면 안 된다.
+       목록 행도 「이름 + 회색 작은 글씨」라 배경만 살짝 다르면 그대로 이어져 보인다 —
+       가라앉은 배경 + 진한 경계선 + 위로 드리운 그림자로 "목록 아래 고정된 칸"임을 드러낸다. */
+    .job-prev { border-top:2px solid var(--line2); background:var(--inset); padding:7px 9px 8px;
+                box-shadow:inset 0 7px 9px -8px rgba(0,0,0,.3); }
     .job-prev .t { font-size:11px; font-weight:700; color:var(--tx); }
     .job-prev .n { font-size:10px; font-weight:400; color:var(--tx3); }
-    .job-prev .b { font-size:10.5px; color:var(--tx2); line-height:1.5; margin-top:3px;
+    /* 영역의 정체를 한 단어로 알린다. 줄을 새로 만들지 않으려고 제목 앞에 인라인으로 붙인다
+       (목록 안 「해설」 배지와 헷갈리지 않게 다른 낱말·다른 색을 쓴다) */
+    .job-prev .pv { display:inline-block; font-size:9px; font-weight:700; color:var(--tx2);
+                    background:var(--chip); border:1px solid var(--line); border-radius:3px;
+                    padding:0 4px; margin-right:4px; }
+    .job-prev .b { font-size:10.5px; color:var(--tx2); line-height:1.5; margin-top:4px;
                    max-height:58px; overflow-y:auto; }
     .job-opt mark, .job-prev mark { background:var(--am-bg); color:var(--am-tx);
                                     padding:0 1px; border-radius:2px; }
@@ -1875,7 +1884,7 @@ function showJobPrev(id, i) {
   const r = item.r, q = $(`wJob_${id}`)?.value || '';
   el.style.display = 'block';
   el.innerHTML =
-    `<div class="t">${wtHi(r.job, q)} <span class="n">· ${r.unpriced ? '단가 미공표 — 시급 직접 입력' : `${wtConvText(r)} = ${fmtn(wtHourlyOf(r))}원`}</span></div>`
+    `<div class="t"><span class="pv">상세</span>${wtHi(r.job, q)} <span class="n">· ${r.unpriced ? '단가 미공표 — 시급 직접 입력' : `${wtConvText(r)} = ${fmtn(wtHourlyOf(r))}원`}</span></div>`
     + (r.desc ? `<div class="b">${wtHi(r.desc, q)}</div>`
               : `<div class="b" style="color:var(--tx3);">해설 없음</div>`);
 }

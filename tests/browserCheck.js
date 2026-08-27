@@ -125,6 +125,27 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     ok('미리보기에 해설 전문(잘림 없음)',
        !prevAfter.includes('…') && prevAfter.length > 20, prevAfter.slice(0, 60));
 
+    // 상세칸이 목록의 또 한 줄처럼 보이면 안 된다 — 배경·경계선이 실제로 다른지 잰다.
+    // 눈으로만 확인하면 토큰이 바뀔 때 조용히 되돌아간다.
+    const sep = await p.evaluate(() => {
+      const rgb = s => (s.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(Number);
+      const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+                         return .2126 * r + .7152 * g + .0722 * b; };
+      const prev = getComputedStyle(document.querySelector('.job-prev'));
+      const opt  = getComputedStyle(document.querySelector('.job-opt'));
+      // 목록 행은 대개 투명이라 팝업 배경이 실제 바탕이 된다
+      const listBg = opt.backgroundColor === 'rgba(0, 0, 0, 0)'
+        ? getComputedStyle(document.querySelector('.job-pop')).backgroundColor : opt.backgroundColor;
+      const L1 = lum(prev.backgroundColor), L2 = lum(listBg);
+      return { ratio: (Math.max(L1, L2) + .05) / (Math.min(L1, L2) + .05),
+               border: parseFloat(prev.borderTopWidth), shadow: prev.boxShadow !== 'none',
+               label: !!document.querySelector('.job-prev .pv') };
+    });
+    ok('★ 상세칸 배경이 목록과 구분됨', sep.ratio >= 1.06, `대비 ${sep.ratio.toFixed(3)}:1`);
+    ok('★ 상세칸 경계선이 2px 이상', sep.border >= 2, `${sep.border}px`);
+    ok('상세칸에 그림자로 단차 표현', sep.shadow);
+    ok('상세칸에 「상세」 표식', sep.label);
+
     // 키보드 조작
     await p.fill('#wJob_1', '');
     await p.click('#wJob_1');
