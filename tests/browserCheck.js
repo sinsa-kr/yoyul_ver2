@@ -165,6 +165,50 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     await p.waitForTimeout(250);
     ok('되돌리기 동작', (await p.locator('#wJobNote_1').innerText()).includes('📋'));
 
+    // ── 기준시급 × 적용률 — 좁은 좌측 컬럼(380px)에 실제로 들어가는지 ──
+    ok('꺼진 상태가 기본', !(await p.locator('#wBaseRow_1').isVisible()));
+    ok('켜기 링크 노출', await p.locator('#wPctBtn_1').isVisible());
+    const rateBefore = await p.inputValue('#wRate_1');
+    await p.locator('#wPctBtn_1').click();
+    await p.waitForTimeout(250);
+    ok('★ 켜도 시급 불변', (await p.inputValue('#wRate_1')) === rateBefore,
+       `${rateBefore} → ${await p.inputValue('#wRate_1')}`);
+    ok('입력행 노출 · 켜기 링크 숨김',
+       (await p.locator('#wBaseRow_1').isVisible()) && !(await p.locator('#wPctBtn_1').isVisible()));
+
+    await p.fill('#wPct_1', '85');
+    await p.waitForTimeout(250);
+    const fit = await p.evaluate(() => {
+      const row = document.querySelector('#wBaseRow_1');
+      const lab = document.querySelector('#wPctBtn_1').parentElement;
+      return { rowOver: row.scrollWidth > row.clientWidth + 1,
+               labOver: lab.scrollWidth > lab.clientWidth + 1,
+               page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+               base: +document.querySelector('#wBase_1').value.replace(/,/g, ''),
+               rate: +document.querySelector('#wRate_1').value.replace(/,/g, '') };
+    });
+    ok('★ 입력행이 카드 폭을 넘지 않음', !fit.rowOver);
+    ok('★ 시급 라벨이 줄바꿈되지 않음', !fit.labOver);
+    ok('페이지 가로 스크롤 없음', !fit.page);
+    ok('★ 시급 = 기준 × 85%', fit.rate === Math.round(fit.base * 0.85), `${fit.base} → ${fit.rate}`);
+    ok('근거 줄에 계산식', (await p.locator('#wJobNote_1').innerText()).includes('× 85% ='),
+       await p.locator('#wJobNote_1').innerText());
+
+    // 다크 테마에서도 새 입력행이 배경에 묻히지 않아야 한다
+    await p.evaluate(() => setTheme('dark'));
+    await p.waitForTimeout(300);
+    const dk = await p.evaluate(() => {
+      const rgb = s => (s.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(Number);
+      const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+                         return .2126 * r + .7152 * g + .0722 * b; };
+      const row = getComputedStyle(document.querySelector('#wBaseRow_1')).backgroundColor;
+      const card = getComputedStyle(document.querySelector('#work_1')).backgroundColor;
+      const L1 = lum(row), L2 = lum(card);
+      return (Math.max(L1, L2) + .05) / (Math.min(L1, L2) + .05);
+    });
+    ok('다크에서 입력행이 카드와 구분됨', dk >= 1.05, `대비 ${dk.toFixed(3)}:1`);
+    await p.evaluate(() => setTheme('warm'));
+
     await p.close();
   }
 

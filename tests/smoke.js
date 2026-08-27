@@ -648,6 +648,141 @@ section('[13] 클립보드 출력');
 }
 
 // ────────────────────────────────────────────────────────────
+section('[13-1] 기준시급 × 적용률');
+{
+  const A = load({ xlsx: XLSX });
+  const { win } = A;
+
+  // ── 기본은 꺼짐 — 지금 화면·동작과 완전히 같아야 한다 ──
+  ok('기본은 꺼진 상태', !win.rateModeOn(1));
+  ok('기준시급 행 숨김', !A.vis('wBaseRow_1'));
+  ok('켜기 링크 노출', A.vis('wPctBtn_1'));
+  ok('꺼진 상태에선 근거 줄 없음', !A.vis('wJobNote_1'));
+
+  // ── 켤 때 금액이 절대 바뀌지 않는다 ──
+  A.set('wRate_1', '20,000'); win.calculate();
+  const before = win.computeAll().results[0].sub;
+  win.setRateMode(1, true);
+  ok('★ 켜도 시급 불변', A.num('wRate_1') === 20000, A.$('wRate_1').value);
+  ok('★ 켜도 계산 결과 불변', win.computeAll().results[0].sub === before);
+  ok('기준 = 켤 때의 시급', A.num('wBase_1') === 20000);
+  ok('적용률 기본 100%', A.num('wPct_1') === 100);
+  ok('기준시급 행 노출', A.vis('wBaseRow_1'));
+  ok('켜기 링크 숨김', !A.vis('wPctBtn_1'));
+
+  // ── 기준·율을 고치면 시급이 따라온다 ──
+  A.set('wPct_1', '85'); win.onBaseChange(1);
+  ok('★ 20,000 × 85% = 17,000', A.num('wRate_1') === 17000, A.$('wRate_1').value);
+  ok('계산에도 반영', win.computeAll().results[0].hourlyRate === 17000);
+  A.set('wBase_1', '21,509'); win.onBaseChange(1);
+  ok('★ 21,509 × 85% = 18,283 (반올림)', A.num('wRate_1') === 18283, A.$('wRate_1').value);
+  ok('근거 줄에 계산식 표기', A.txt('wJobNote_1').includes('× 85% = 18,283원'), A.txt('wJobNote_1'));
+
+  // ── 시급 직접 수정 — 기준·율은 그대로, 근거만 사실대로 ──
+  A.set('wRate_1', '19,000'); win.renderJobNote(1); win.calculate();
+  ok('직접 수정해도 기준 유지', A.num('wBase_1') === 21509 && A.num('wPct_1') === 85);
+  ok('근거가 「직접 수정」으로 전환', A.txt('wJobNote_1').includes('직접 수정 19,000원'), A.txt('wJobNote_1'));
+  ok('되돌리기 링크 노출', A.$('wJobNote_1').innerHTML.includes('revertToCalcRate'));
+  ok('수정한 시급이 계산에 반영', win.computeAll().results[0].hourlyRate === 19000);
+  win.revertToCalcRate(1);
+  ok('되돌리기 → 계산값 복원', A.num('wRate_1') === 18283);
+  ok('되돌린 뒤 링크 사라짐', !A.$('wJobNote_1').innerHTML.includes('revertToCalcRate'));
+
+  // ── 끌 때도 금액이 바뀌지 않는다 ──
+  win.setRateMode(1, false);
+  ok('★ 꺼도 시급 불변', A.num('wRate_1') === 18283);
+  ok('꺼진 뒤 근거 줄 사라짐', !A.vis('wJobNote_1'));
+
+  // ── 최저임금 경고는 그대로 동작 ──
+  win.setRateMode(1, true);
+  A.set('wBase_1', '10,000'); A.set('wPct_1', '50'); win.onBaseChange(1);
+  ok('기준×율이 최저임금 미만이면 경고', A.vis('wWarn_1'), A.$('wRate_1').value);
+}
+
+// ────────────────────────────────────────────────────────────
+section('[13-2] 적용률 × 단가표 · 저장 · 산출물');
+{
+  const A = load({ xlsx: XLSX });
+  const { win } = A;
+  win.wtApply(win.wtParseWorkbook(makeWageWorkbook(XLSX, [['보통인부', 172068], ['용접공', 282536]])),
+              { name: '테스트표', source: 'upload', fileName: 't.xlsx' });
+
+  // 직종 단가는 「기준시급」으로 들어가고 시급은 기준×율로 선다
+  win.setRateMode(1, true);
+  A.set('wPct_1', '85'); win.onBaseChange(1);
+  win.onJobPick(1, '보통인부');
+  ok('★ 직종 단가가 기준시급으로', A.num('wBase_1') === 21509, A.$('wBase_1').value);
+  ok('★ 시급은 기준×율', A.num('wRate_1') === 18283, A.$('wRate_1').value);
+  ok('적용률은 그대로 유지', A.num('wPct_1') === 85);
+  ok('근거에 단가→기준→율이 다 보임',
+     A.txt('wJobNote_1').includes('172,068원/일') && A.txt('wJobNote_1').includes('× 85% = 18,283원'),
+     A.txt('wJobNote_1'));
+
+  // 기준을 단가와 다르게 직접 넣으면 그 사실을 짚어준다
+  A.set('wBase_1', '20,000'); win.onBaseChange(1);
+  ok('기준 직접 입력 시 ✏️ 표기', A.txt('wJobNote_1').includes('기준 20,000원'), A.txt('wJobNote_1'));
+  ok('단가로 되돌리기 링크', A.$('wJobNote_1').innerHTML.includes('revertToTableRate'));
+  win.revertToTableRate(1);
+  ok('★ 되돌리기 → 기준이 단가로', A.num('wBase_1') === 21509 && A.num('wRate_1') === 18283);
+
+  // 환산 기준(÷N h) 변경 — 기준시급이 따라오고 율은 유지
+  A.set('wtHours', 10); win.onWtHoursChange();
+  ok('★ ÷10h → 기준 17,207', A.num('wBase_1') === 17207, A.$('wBase_1').value);
+  ok('시급도 재계산 (17,207×85%)', A.num('wRate_1') === Math.round(17207 * 0.85), A.$('wRate_1').value);
+  A.set('wtHours', 8); win.onWtHoursChange();
+
+  // 반기 갱신 — 기준시급만 새 단가로, 협상 비율은 유지
+  win.confirm = () => true;
+  A.win.confirm = () => true;
+  win.wtApply(win.wtParseWorkbook(makeWageWorkbook(XLSX, [['보통인부', 200000]])),
+              { name: '새표', source: 'upload', fileName: 'n.xlsx' });
+  win.applyWageTableToAll([{ id: 1, job: '보통인부', rate: 21509 }]);
+  ok('★ 일괄 갱신 → 기준만 새 단가', A.num('wBase_1') === 25000, A.$('wBase_1').value);
+  ok('갱신 후에도 적용률 유지', A.num('wPct_1') === 85);
+  ok('시급 = 새 기준 × 율', A.num('wRate_1') === Math.round(25000 * 0.85), A.$('wRate_1').value);
+
+  // 인상률 반영 — 기준시급이 오르고 율은 그대로
+  A.set('simRate', '10');
+  win.applyRaise();
+  ok('★ 인상률은 기준시급에 반영', A.num('wBase_1') === 27500, A.$('wBase_1').value);
+  ok('인상 후에도 적용률 유지', A.num('wPct_1') === 85);
+  ok('시급 = 인상된 기준 × 율', A.num('wRate_1') === Math.round(27500 * 0.85), A.$('wRate_1').value);
+
+  // 저장 → 복원 라운드트립
+  const st = win.collectState();
+  ok('collectState 에 rateMode 포함', st.works[0].rateMode === 'pct');
+  ok('collectState 에 기준·율 포함', st.works[0].baseRate === 27500 && st.works[0].ratePct === 85);
+
+  const B = load({ xlsx: XLSX });
+  B.win.applyState(JSON.parse(JSON.stringify(st)));
+  const bid = B.win.workIdsInOrder()[0];
+  ok('★ 복원 후 적용률 모드 유지', B.win.rateModeOn(bid));
+  ok('복원 후 기준·율·시급 일치',
+     B.num(`wBase_${bid}`) === 27500 && B.num(`wPct_${bid}`) === 85 && B.num(`wRate_${bid}`) === Math.round(27500 * 0.85));
+  ok('복원 후 금액이 저장 시점과 동일',
+     B.win.computeAll().results[0].sub === win.computeAll().results[0].sub);
+
+  // 구버전 저장본 — 세 키가 없어도 예외 없이 열리고 금액이 같아야 한다
+  const legacy = JSON.parse(JSON.stringify(st));
+  legacy.works.forEach(w => { delete w.rateMode; delete w.baseRate; delete w.ratePct; });
+  const C = load({ xlsx: XLSX });
+  C.win.applyState(legacy);
+  const cid = C.win.workIdsInOrder()[0];
+  ok('★ 구버전 저장본은 꺼진 상태로 열림', !C.win.rateModeOn(cid));
+  ok('구버전 저장본 금액 동일', C.num(`wRate_${cid}`) === Math.round(27500 * 0.85));
+  ok('구버전 저장본 에러 없음', C.errors.length === 0, C.errors.slice(0, 2).join(' | '));
+
+  // 클립보드 — 적용률을 쓸 때만 근거가 붙는다
+  let copied = '';
+  win.copyText = t => { copied = t; return Promise.resolve(); };
+  win.copyResult();
+  ok('클립보드에 기준×율 기록', copied.includes(`기준 27,500원 × 85% = ${A.$('wRate_1').value}원`), copied.slice(0, 400));
+  win.setRateMode(1, false);
+  win.copyResult();
+  ok('안 쓰면 클립보드에 안 나옴', !copied.includes('기준 27,500원'));
+}
+
+// ────────────────────────────────────────────────────────────
 section('[14] 최종 에러 점검');
 {
   const A = load({ xlsx: XLSX });

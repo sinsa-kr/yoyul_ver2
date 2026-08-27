@@ -94,11 +94,29 @@
       목록이 출렁여서 따로 뒀다). 검색어 일치 부분은 강조하되, 해설은 엑셀에서 온 외부
       데이터라 조각별로 이스케이프한 뒤 <mark> 만 끼워 넣는다.
     · 실제 단가표(437행)를 넣어보고 파서 결함 2건을 고쳤다 —
-      ① 단가가 '-' 인 미공표 직종 174건을 통째로 버리고 있었다. 표의 40% 라
-         검색조차 안 됐다. 이제 목록에 남기고 「단가 미공표」로 표시하며,
-         선택해도 시급은 건드리지 않는다(직접 입력).
+      ① 단가가 '-' 인 미공표 직종 174건을 통째로 버리고 있었다. 표의 40% 라 검색조차 안 됐다.
+         (→ 2026-08-27 개정에서 「목록에서 제외」로 방침이 다시 바뀌었다. 아래 참조.)
       ② 동명이직 28건이 사라지고 있었다. 기술사는 분야별로 4개, 작업반장은 적용월별로 2개다.
          적용월이 다르면 적용월을, 같으면 해설(분야)을 붙여 구분한다 — 238 → 437개 전부 보존.
+
+    [2026-08-27 개정] 단가 없는 직종 제외 · 상세칸 분리 · 기준시급 × 적용률
+    · 단가가 0·공란·'-' 인 행은 골라도 시급이 채워지지 않아 헛걸음만 만든다 → 표시 단계에서
+      숨기는 대신 파싱 단계에서 아예 들이지 않는다. 목록·검색·자동완성·엑셀 어디에도 안 나온다.
+      이 규칙 이전에 저장된 표(저장 JSON·localStorage)도 읽는 길목에서 같은 기준으로 걸러낸다.
+      빠진 건수는 패널에 밝힌다("263개 직종 (단가 없는 174건 제외)").
+      부수 효과: 단가 없는 동명이직이 빠지면서 남는 이름이 1건이면 구분자 괄호가 붙지 않는다.
+    · 직종 검색 팝업의 하단 상세칸이 목록과 구분되지 않았다(배경 대비 1.03:1). 목록 행도
+      「이름 + 회색 해설」이라 그대로 이어져 보였다 → --inset 배경 + --line2 2px + 안쪽 그림자
+      + 제목 앞 「상세」 표식. 대비 기본 1.151 · 화이트 1.104 · 다크 1.169.
+    · 업무별 「기준시급 × 적용률」 — "노임단가의 85%" 같은 계약 조건을 화면·산출물에 남긴다.
+      기본은 꺼짐(구버전 저장본은 꺼진 상태로 열려 종전과 동일). 켜고 끌 때 금액이 절대
+      바뀌지 않는다 — 켜면 기준 = 지금 시급, 율 = 100%.
+      켜짐 여부·수정 여부를 플래그로 저장하지 않고 입력 행의 표시 상태와 값 비교로 매번
+      판정한다(단가표 기능과 같은 철학). 어긋난 곳이 있으면 한 군데만 짚고 되돌리기도 하나만.
+      단가표 연동은 전부 기준시급 쪽으로 간다 — 직종 선택 · 반기 일괄 갱신 · 환산기준(÷N h)
+      변경 모두 기준만 갈고 협상 비율(%)은 유지한다. 인상률 반영도 기준시급을 올린다.
+      엑셀 「기준시급」·「적용률」 행은 '원/h'·'%' 가중평균 열이라 문자를 섞으면 SUMPRODUCT 가
+      깨진다 → 적용률을 안 쓰는 업무는 「시급의 100%」라는 사실 그대로 숫자를 넣는다.
 
     [테스트] 회귀 하네스를 tests/ 로 옮겼다. 임시 폴더에 두었다가 두 번 유실된 뒤의 조치.
       node tests/smoke.js · tests/excel.js · tests/browserCheck.js
@@ -1486,13 +1504,14 @@ function onWtHoursChange() {
   const wasOnTable = workIdsInOrder().filter(id => {
     const r = wtFind($(`wJob_${id}`)?.value.trim());
     // 일(日) 단가만 ÷N시간의 영향을 받는다
-    return r && !r.unpriced && (r.unit || 'day') === 'day' && gv(`wRate_${id}`) === Math.round(r.dayWage / prev);
+    return r && !r.unpriced && (r.unit || 'day') === 'day' && gv(rateAnchor(id)) === Math.round(r.dayWage / prev);
   });
   wageTable.hoursPerDay = h;
   if (wageTable.source === 'upload') wtSave();
   for (const id of wasOnTable) {
     const r = wtFind($(`wJob_${id}`).value.trim());
-    $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+    $(rateAnchor(id)).value = fmtn(wtHourlyOf(r));
+    if (rateModeOn(id)) $(`wRate_${id}`).value = fmtn(pctRateOf(id));
   }
   renderWtList();
   renderWtPanel();
@@ -1533,7 +1552,7 @@ function importWageTable(input) {
 // 표 교체 직전의 「직종이 지정된 업무」와 그 시급 — 갱신 전후를 보여주기 위해
 function wtSnapshotJobs() {
   return workIdsInOrder()
-    .map(id => ({ id, job: $(`wJob_${id}`)?.value || '', rate: gv(`wRate_${id}`) }))
+    .map(id => ({ id, job: $(`wJob_${id}`)?.value || '', rate: gv(rateAnchor(id)) }))
     .filter(x => x.job);
 }
 
@@ -1551,7 +1570,9 @@ function applyWageTableToAll(before) {
   const tail = miss.length ? `\n\n※ ${miss.length}건은 새 표에 직종이 없어 제외됩니다.` : '';
   if (!confirm(`직종이 지정된 업무 ${hit.length}건의 시급도 새 단가로 갱신할까요?\n\n${lines.join('\n')}${tail}`)) return;
   for (const x of hit) {
-    $(`wRate_${x.id}`).value = fmtn(wtRateOf(x.job));
+    // 적용률을 쓰는 업무는 기준시급만 새 단가로 갈고 협상 비율(%)은 그대로 둔다
+    $(rateAnchor(x.id)).value = fmtn(wtRateOf(x.job));
+    if (rateModeOn(x.id)) $(`wRate_${x.id}`).value = fmtn(pctRateOf(x.id));
     const r = wtFind(x.job);
     if (r?.accidentRate != null && $(`wAcc_${x.id}`)) $(`wAcc_${x.id}`).value = r.accidentRate;
   }
@@ -1725,6 +1746,10 @@ function addWork(p, atTop = false) {
   // 근로시간 적용제외(§63): 저장본에 있으면 사용, 없으면(구버전 포함) 격일제만 ON 으로 추정 —
   // 격일제 경비·시설관리가 감시·단속적 근로 승인의 전형이라 기본 예시가 경고로 뒤덮이지 않게 한다
   const exemptOn = (p.exempt !== undefined && p.exempt !== null) ? !!p.exempt : (p.shiftType === 'alternate');
+  // 기준시급 × 적용률: 구버전 저장본에는 없다 → 꺼진 상태로 열려 지금과 동일하게 동작한다
+  const pctOn   = p.rateMode === 'pct';
+  const baseRt  = (p.baseRate !== undefined && p.baseRate !== null) ? p.baseRate : p.hourlyRate;
+  const ratePct = (p.ratePct  !== undefined && p.ratePct  !== null) ? p.ratePct  : 100;
 
   const div = document.createElement('div');
   div.id = `work_${id}`;
@@ -1759,9 +1784,29 @@ function addWork(p, atTop = false) {
         </div>
       </div>
     </div>
+    <div id="wBaseRow_${id}" style="display:${pctOn ? 'block' : 'none'};background:var(--inset);border-radius:5px;padding:6px 8px;margin-bottom:7px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--tx-in);font-weight:600;">기준시급 × 적용률</span>
+        <button type="button" onclick="setRateMode(${id},false)" style="font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">끄기</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <input type="text" inputmode="numeric" id="wBase_${id}" value="${fmtn(baseRt)}" oninput="fmtMoney(this);onBaseChange(${id})"
+          style="flex:1;min-width:0;padding:3px 5px;border:1px solid var(--line2);border-radius:4px;font-size:12px;text-align:right;outline:none;background:var(--panel);">
+        <span style="font-size:10.5px;color:var(--tx3);">원</span>
+        <span style="font-size:12px;color:var(--tx2);">×</span>
+        <input type="number" id="wPct_${id}" value="${ratePct}" min="0" step="0.1" oninput="onBaseChange(${id})"
+          style="width:56px;padding:3px 5px;border:1px solid var(--line2);border-radius:4px;font-size:12px;text-align:right;outline:none;background:var(--panel);">
+        <span style="font-size:10.5px;color:var(--tx3);">%</span>
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.8fr;gap:6px;margin-bottom:7px;">
       <div>
-        <label style="font-size:10px;color:var(--tx2);">시급 (원)</label>
+        <!-- 켜기 링크는 시급 바로 옆에 붙인다 — 오른쪽 끝으로 밀면 옆 칸(인원수)에 딸린 것처럼 보인다 -->
+        <label style="font-size:10px;color:var(--tx2);display:flex;align-items:center;gap:5px;">
+          <span>시급 (원)</span>
+          <button type="button" id="wPctBtn_${id}" onclick="setRateMode(${id},true)" title="기준시급의 몇 %를 시급으로 삼을지 정합니다 (예: 노임단가의 85%)"
+            style="display:${pctOn ? 'none' : 'inline'};font-size:9.5px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;white-space:nowrap;">기준×%</button>
+        </label>
         <input type="text" inputmode="numeric" id="wRate_${id}" value="${fmtn(p.hourlyRate)}" oninput="fmtMoney(this);renderJobNote(${id});calculate()"
           style="width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px;outline:none;margin-top:2px;box-sizing:border-box;background:var(--panel);">
         <div id="wWarn_${id}" style="display:none;font-size:10px;color:var(--danger);margin-top:1px;">⚠ 최저임금 미만</div>
@@ -1921,7 +1966,9 @@ function onJobPick(id, job) {
   el.dataset.lastJob = job;      // 이후 잘못된 입력이 들어오면 여기로 되돌아온다
   closeJobList(id);
   if (r && !r.unpriced) {
-    $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+    // 적용률을 쓰는 업무는 단가가 「기준시급」으로 들어가고, 시급은 기준×율로 다시 선다
+    $(rateAnchor(id)).value = fmtn(wtHourlyOf(r));
+    if (rateModeOn(id)) $(`wRate_${id}`).value = fmtn(pctRateOf(id));
     if (r.accidentRate != null && $(`wAcc_${id}`)) $(`wAcc_${id}`).value = r.accidentRate;
   }
   renderJobNote(id);
@@ -1944,6 +1991,45 @@ function resolveJobInput(id) {
 // 목록을 mousedown 으로 고르는 경우보다 늦게 판정해야 선택이 취소되지 않는다
 function onJobBlur(id) { setTimeout(() => resolveJobInput(id), 120); }
 
+// ================================================================
+// 기준시급 × 적용률 — "노임단가의 85%" 같은 계약 조건을 화면·산출물에 남긴다
+// ================================================================
+// 값은 시급 한 곳에만 두고, 기준·율은 그 시급을 만든 근거로만 쓴다.
+// 켜짐 여부도 따로 저장하지 않고 입력 행의 표시 상태로 판정한다 —
+// 플래그와 실제 화면이 어긋나는 경로를 아예 만들지 않기 위해서다.
+function rateModeOn(id) { return $(`wBaseRow_${id}`) ? $(`wBaseRow_${id}`).style.display !== 'none' : false; }
+function pctRateOf(id)  { return Math.round(gv(`wBase_${id}`) * gv(`wPct_${id}`) / 100); }
+// 「이 업무가 단가표 값을 그대로 쓰고 있는가」를 재는 칸 — 적용률을 쓰면 기준시급이 그 자리다
+function rateAnchor(id) { return rateModeOn(id) ? `wBase_${id}` : `wRate_${id}`; }
+
+// 켜고 끌 때 금액이 절대 바뀌지 않는다 — 켜면 기준 = 지금 시급, 율 = 100%.
+// 그 기준이 마침 직종 단가와 같으면 비교만으로 「표 기준」으로 인식된다(플래그 불필요).
+function setRateMode(id, on) {
+  const row = $(`wBaseRow_${id}`), btn = $(`wPctBtn_${id}`);
+  if (!row) return;
+  if (on) {
+    $(`wBase_${id}`).value = fmtn(gv(`wRate_${id}`));
+    $(`wPct_${id}`).value  = 100;
+  }
+  row.style.display = on ? 'block' : 'none';
+  if (btn) btn.style.display = on ? 'none' : 'inline';
+  renderJobNote(id);
+  calculate();
+}
+
+// 기준·율을 고치면 시급이 따라온다 (시급을 직접 고치는 것과는 반대 방향)
+function onBaseChange(id) {
+  $(`wRate_${id}`).value = fmtn(pctRateOf(id));
+  renderJobNote(id);
+  calculate();
+}
+// 시급을 손으로 고친 뒤 되돌리기 — 기준 × 율 값으로 복원
+function revertToCalcRate(id) {
+  $(`wRate_${id}`).value = fmtn(pctRateOf(id));
+  renderJobNote(id);
+  calculate();
+}
+
 // 근거 한 줄 — 표시가 실제 시급과 어긋난 채 결재 문서로 나가지 않도록,
 // 「직접 수정」 여부를 플래그가 아니라 현재 값 비교로 매번 판정한다.
 function renderJobNote(id) {
@@ -1951,34 +2037,55 @@ function renderJobNote(id) {
   const el   = $(`wJob_${id}`);
   if (!note || !el) return;
   const job = el.value.trim();
-  if (!job) { note.style.display = 'none'; note.innerHTML = ''; return; }
+  const pct = rateModeOn(id);
+  // 직종도 없고 적용률도 안 쓰면 설명할 근거 자체가 없다
+  if (!job && !pct) { note.style.display = 'none'; note.innerHTML = ''; return; }
+  note.style.display = 'block';
 
-  const r = wtFind(job);
-  if (!r) {                              // 저장본에는 있으나 현재 표에 없는 직종
-    note.style.display = 'block';
+  const link = (fn, label) =>
+    `<button type="button" onclick="${fn}(${id})" style="margin-left:5px;font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">${label}</button>`;
+  const r = job ? wtFind(job) : null;
+
+  if (job && !r) {                       // 저장본에는 있으나 현재 표에 없는 직종
     note.innerHTML = `<span style="color:var(--warn);">⚠ ${esc(job)} — 현재 단가표에 없는 직종입니다 (시급은 직접 입력값)</span>`;
     return;
   }
-  if (r.unpriced) {
-    note.style.display = 'block';
+  if (r && r.unpriced) {
     note.innerHTML = `<span style="color:var(--tx3);">📋 ${esc(job)} · 단가 미공표 — 시급은 직접 입력합니다</span>`;
     return;
   }
-  const base = wtHourlyOf(r);
-  const cur  = gv(`wRate_${id}`);
-  const same = cur === base;
-  note.style.display = 'block';
-  const tip = r.desc ? ` title="${esc(r.desc)}"` : '';
-  note.innerHTML = same
-    ? `<span style="color:var(--tx3);"${tip}>📋 ${esc(job)} · ${wtConvText(r)} = ${fmtn(base)}원</span>`
-    : `<span style="color:var(--am-tx);">✏️ ${esc(job)} 기준 ${fmtn(base)}원 → 직접 수정 ${fmtn(cur)}원</span>
-       <button type="button" onclick="revertToTableRate(${id})" style="margin-left:5px;font-size:10px;color:var(--link);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">단가로 되돌리기</button>`;
+  const tblRate = r ? wtHourlyOf(r) : null;
+  const tip     = r?.desc ? ` title="${esc(r.desc)}"` : '';
+  const cur     = gv(`wRate_${id}`);
+
+  if (!pct) {                            // 시급을 바로 쓰는 기존 방식
+    note.innerHTML = cur === tblRate
+      ? `<span style="color:var(--tx3);"${tip}>📋 ${esc(job)} · ${wtConvText(r)} = ${fmtn(tblRate)}원</span>`
+      : `<span style="color:var(--am-tx);">✏️ ${esc(job)} 기준 ${fmtn(tblRate)}원 → 직접 수정 ${fmtn(cur)}원</span>${link('revertToTableRate', '단가로 되돌리기')}`;
+    return;
+  }
+
+  // 적용률 모드 — 어긋난 곳이 있으면 그 한 군데만 짚어준다(되돌리기 링크도 하나만)
+  const b = gv(`wBase_${id}`), p = gv(`wPct_${id}`), calc = pctRateOf(id);
+  const tail = `× ${p}% = ${fmtn(calc)}원`;
+  if (cur !== calc) {
+    note.innerHTML = `<span style="color:var(--am-tx);">✏️ 기준 ${fmtn(b)}원 ${tail} → 직접 수정 ${fmtn(cur)}원</span>${link('revertToCalcRate', '계산값으로 되돌리기')}`;
+    return;
+  }
+  if (r && b !== tblRate) {              // 기준시급을 단가와 다르게 직접 넣은 경우
+    note.innerHTML = `<span style="color:var(--am-tx);">✏️ ${esc(job)} 단가 ${fmtn(tblRate)}원 → 기준 ${fmtn(b)}원 ${tail}</span>${link('revertToTableRate', '단가로 되돌리기')}`;
+    return;
+  }
+  note.innerHTML = r
+    ? `<span style="color:var(--tx3);"${tip}>📋 ${esc(job)} · ${wtConvText(r)} = ${fmtn(tblRate)}원 ${tail}</span>`
+    : `<span style="color:var(--tx3);">📋 기준 ${fmtn(b)}원 ${tail}</span>`;
 }
 
 function revertToTableRate(id) {
   const r = wtFind($(`wJob_${id}`)?.value.trim());
-  if (!r) return;
-  $(`wRate_${id}`).value = fmtn(wtHourlyOf(r));
+  if (!r || r.unpriced) return;
+  $(rateAnchor(id)).value = fmtn(wtHourlyOf(r));
+  if (rateModeOn(id)) $(`wRate_${id}`).value = fmtn(pctRateOf(id));
   renderJobNote(id);
   calculate();
 }
@@ -2331,6 +2438,10 @@ function collectWorks() {
     items.push({
       id: i,
       otExempt,
+      // 시급을 만든 근거 — 계산에는 쓰이지 않고 화면·저장·산출물 표기에만 쓰인다
+      rateMode:      rateModeOn(i) ? 'pct' : 'direct',
+      baseRate:      gv(`wBase_${i}`),
+      ratePct:       gv(`wPct_${i}`),
       jobTitle:      $(`wJob_${i}`)?.value.trim() || '',
       name:          $(`wName_${i}`)?.value || `업무 ${i}`,
       shiftType:     $(`wShift_${i}`)?.value || 'day',
@@ -2474,8 +2585,9 @@ function computeAll(adj) {
   const rates   = { ret:gv('rRet')/100, pen:gv('rNP')/100, hlt:gv('rHI')/100, ltc:gv('rLT')/100, emp1:gv('rEI1')/100, emp2:gv('rEI2')/100 };
   if (adj) {
     const k = 1 + (adj.rate || 0) / 100;
-    // 휴일 정액단가도 인건비라 시급과 같은 인상률을 받는다
-    works.forEach(w => { w.hourlyRate *= k; w.holFlatRate *= k; });
+    // 휴일 정액단가도 인건비라 시급과 같은 인상률을 받는다.
+    // 기준시급도 함께 올려 「기준 × 율 = 시급」 관계가 미리보기 안에서도 어긋나지 않게 한다.
+    works.forEach(w => { w.hourlyRate *= k; w.holFlatRate *= k; w.baseRate *= k; });
     wfTotal *= 1 + (adj.wf || 0) / 100;
     fxTotal *= 1 + (adj.fx || 0) / 100;
     mgmtR    = (gv('mgmtRate') + (adj.mgmt || 0)) / 100;   // 관리비율만 %p 가감
@@ -2660,7 +2772,13 @@ function applyRaise() {
 
   const kR = 1 + adj.rate / 100, kW = 1 + adj.wf / 100, kF = 1 + adj.fx / 100;
   const bump = (id, k) => { if ($(id)) $(id).value = fmtn(Math.round(gv(id) * k)); };
-  for (const i of workIdsInOrder()) { bump(`wRate_${i}`, kR); bump(`wHolRate_${i}`, kR); }
+  // 적용률을 쓰는 업무는 기준시급을 올린다 — 적용률은 협상으로 정한 계약 조건이라 건드리지 않는다.
+  // 시급은 기준×율로 다시 서므로 결과 인상폭은 어느 쪽이든 같다.
+  for (const i of workIdsInOrder()) {
+    bump(rateAnchor(i), kR);
+    if (rateModeOn(i)) $(`wRate_${i}`).value = fmtn(pctRateOf(i));
+    bump(`wHolRate_${i}`, kR);
+  }
   for (const w of WF_ITEMS) bump(w.id + '_v', kW);          // 체크 해제된 항목도 함께 — 나중에 켜도 일관되게
   for (let i = 1; i <= wfCnt; i++) bump(`wfAmt_${i}`, kW);
   for (let i = 1; i <= fxCnt; i++) bump(`fxAmt_${i}`, kF);
@@ -3321,6 +3439,7 @@ function copyResult() {
     '[업무별 결과]',
     ...results.map(r => `${r.name} | ${SHIFT_LABELS[r.shiftType]||''} | ${r.headcount}명`
       + (r.jobTitle && wtFind(r.jobTitle) ? ` | 직종 ${r.jobTitle}(${wtFind(r.jobTitle).unpriced ? '단가 미공표' : `${fmtn(wtFind(r.jobTitle).dayWage)}원/${wtUnitLabel(wtFind(r.jobTitle))}`})` : '')
+      + (r.rateMode === 'pct' ? ` | 기준 ${fmtn(r.baseRate)}원 × ${r.ratePct}% = ${fmtn(r.hourlyRate)}원` : '')
       + ` | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
     '',
     `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
@@ -4006,6 +4125,14 @@ function buildDetailSheet(base, cin) {
   }
 
   band('근무 조건 — 노란 배경 칸만 직접 입력', S.secBlue);
+  // 기준시급 × 적용률을 쓴 업무가 있을 때만 근거 두 행을 넣는다
+  // (안 쓰면 시트 구조가 종전과 완전히 같다)
+  // '원/h'·'%' 는 인원 가중평균 열이라 문자('—')를 섞으면 합계와 수식이 깨진다.
+  // 적용률을 안 쓰는 업무는 「시급의 100%」가 사실 그대로이므로 그 값을 넣는다.
+  if (results.some(w => w.rateMode === 'pct')) {
+    RM.baseRate = row('기준시급',  '원/h', w => w.rateMode === 'pct' ? w.baseRate : w.hourlyRate, 'data', WON);
+    RM.ratePct  = row('적용률',    '%',    w => w.rateMode === 'pct' ? w.ratePct  : 100);
+  }
   RM.rate    = row('시급',     '원/h', w => w.hourlyRate,       'data', WON, true);
   RM.head    = row('인원',     '명',   w => w.headcount,        'data', NUM, true);
   RM.hReg    = row('소정근로', 'h',    w => w.hoursRegular,     'data', NUM, true);
@@ -4429,6 +4556,9 @@ function collectState() {
       holFlatRate:   gv(`wHolRate_${i}`),
       weeklyRest:    gc(`wRest_${i}`),
       exempt:        gc(`wExempt_${i}`),
+      rateMode:      rateModeOn(i) ? 'pct' : 'direct',
+      baseRate:      gv(`wBase_${i}`),
+      ratePct:       gv(`wPct_${i}`),
       jobTitle:      $(`wJob_${i}`)?.value.trim() || '',
       customPattern: pattern ? JSON.parse(pattern) : null,
     });

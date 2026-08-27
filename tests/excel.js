@@ -159,6 +159,39 @@ section('[4] 단가표 근거 출력');
 }
 
 // ────────────────────────────────────────────────────────────
+section('[4-1] 기준시급 × 적용률 출력');
+{
+  // 안 쓰면 시트 구조가 종전과 완전히 같아야 한다
+  const plain = grab(A => A.win.calculate());
+  ok('안 쓰면 기준시급 행 없음', findRow(plain.wb.Sheets['산정내역'], '기준시급') === -1);
+  ok('안 쓰면 적용률 행 없음',   findRow(plain.wb.Sheets['산정내역'], '적용률') === -1);
+
+  const { wb } = grab(A => {
+    A.win.wtApply(A.win.wtParseWorkbook(makeWageWorkbook(XLSX, [['보통인부', 172068]])),
+                  { name: '표', source: 'upload', fileName: 't.xlsx' });
+    A.win.setRateMode(1, true);
+    A.set('wPct_1', '85');
+    A.win.onBaseChange(1);
+    A.win.onJobPick(1, '보통인부');
+    A.win.addWork({ name: '직접입력업무', shiftType: 'day', hourlyRate: 30000, headcount: 1,
+                    hoursRegular: 209, hoursOvertime: 0, hoursNight: 0, holidayHours: 0 });
+    A.win.calculate();
+  });
+  const det = wb.Sheets['산정내역'];
+  const rB = findRow(det, '기준시급'), rP = findRow(det, '적용률'), rR = findRow(det, '시급');
+  ok('기준시급 행 추가', rB > 0, String(rB));
+  ok('적용률 행 추가',   rP > 0, String(rP));
+  ok('기준시급 = 21,509', det[ref(rB, 2)]?.v === 21509, String(det[ref(rB, 2)]?.v));
+  ok('적용률 = 85',       det[ref(rP, 2)]?.v === 85,     String(det[ref(rP, 2)]?.v));
+  ok('시급 = 18,283',     det[ref(rR, 2)]?.v === 18283,  String(det[ref(rR, 2)]?.v));
+  // 가중평균 열이라 문자가 섞이면 합계·수식이 깨진다 — 안 쓰는 업무도 숫자여야 한다
+  ok('★ 적용률 안 쓰는 업무도 숫자(100)', det[ref(rP, 3)]?.v === 100, String(det[ref(rP, 3)]?.v));
+  ok('★ 그 업무 기준시급은 시급과 동일', det[ref(rB, 3)]?.v === 30000, String(det[ref(rB, 3)]?.v));
+  ok('적용률 행 서식이 %', String(det[ref(rP, 2)]?.z || '').includes('%'), String(det[ref(rP, 2)]?.z));
+  verifyFormulas(wb, '적용률 포함 워크북');
+}
+
+// ────────────────────────────────────────────────────────────
 section('[5] 업체 비교 시트');
 {
   const { A, wb } = grab(A => {
