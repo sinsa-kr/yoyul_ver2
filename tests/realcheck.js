@@ -1,11 +1,13 @@
 const XLSX = require('xlsx-js-style');
 const fs = require('fs');
+const path = require('path');
 const { load } = require('./harness');
 const A = load({ xlsx: XLSX });
-const wb = XLSX.read(fs.readFileSync('../단가표.xlsx'), { type: 'buffer' });
+// 실행 위치와 무관하게 리포 루트의 표를 읽는다
+const wb = XLSX.read(fs.readFileSync(path.resolve(__dirname, '..', '단가표.xlsx')), { type: 'buffer' });
 const p = A.win.wtParseWorkbook(wb);
 console.log('파싱 직종 수 :', p.rows.length);
-console.log('미공표 직종  :', p.unpriced, '· 동명이직 구분', p.dup);
+console.log('제외(단가없음):', p.unpriced, '· 동명이직 구분', p.dup);
 console.log('기준         :', p.basis);
 const units = p.rows.reduce((m, r) => (m[r.unit || 'null'] = (m[r.unit || 'null'] || 0) + 1, m), {});
 console.log('단위 분포    :', JSON.stringify(units));

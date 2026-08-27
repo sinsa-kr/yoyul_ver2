@@ -69,6 +69,8 @@ async function drag(page, a, b, { ctrl = false } = {}) {
         if (cand) { descProbe = { job: r.job, term: cand }; break; }
       }
       return { n: rows.length, unpriced: rows.filter(r => r.unpriced).length,
+               noRate: rows.filter(r => !(r.dayWage > 0)).length,
+               excluded: wageTable?.excluded || 0,
                priced: priced && { job: priced.job, rate: wtRateOf(priced.job) }, descProbe };
     });
     ok('업로드 없이 리포 단가표 자동 로드', meta.n > 0, `${meta.n}개 직종`);
@@ -105,8 +107,12 @@ async function drag(page, a, b, { ctrl = false } = {}) {
       ok('해설 검색 표본을 찾지 못함 (표에 해설이 없음)', false, '표 확인 필요');
     }
     ok('미리보기가 보임', await p.locator('#wJobPrev_1').isVisible());
-    ok('미공표 직종도 목록에 남음', meta.unpriced === 0 || meta.n > meta.unpriced,
-       `미공표 ${meta.unpriced}/${meta.n}`);
+    // 실제 표에 단가 없는 행이 섞여 있어도 로드된 목록에는 한 건도 없어야 한다
+    ok('★ 단가 없는 직종은 목록에 없음', meta.noRate === 0 && meta.unpriced === 0,
+       `단가없음 ${meta.noRate} · unpriced ${meta.unpriced} / ${meta.n}`);
+    ok('제외 건수를 패널에 밝힘',
+       !meta.excluded || (await p.locator('#wtStatus').innerText()).includes(`${meta.excluded}건 제외`),
+       `excluded=${meta.excluded} · ${await p.locator('#wtStatus').innerText()}`);
 
     await p.fill('#wJob_1', ''); await p.waitForTimeout(250);
     const prevBefore = await p.locator('#wJobPrev_1').innerText();

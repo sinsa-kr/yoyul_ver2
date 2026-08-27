@@ -1245,9 +1245,19 @@ function wtHasDayRows() { return wtRows().some(r => !r.unpriced && (r.unit || 'd
 function wtSave() {
   try { localStorage.setItem(WT_KEY, JSON.stringify(wageTable)); } catch (e) {}
 }
+// 이 규칙이 생기기 전에 저장된 표에는 단가 없는 행이 섞여 있다.
+// 저장본을 다시 파싱할 수는 없으므로, 읽어 들이는 길목에서 같은 기준으로 걸러낸다.
+function wtStripUnpriced(t) {
+  if (!t || !Array.isArray(t.rows)) return t;
+  const kept = t.rows.filter(r => Number.isFinite(r?.dayWage) && r.dayWage > 0);
+  if (kept.length !== t.rows.length) t.excluded = t.rows.length - kept.length;
+  t.rows = kept;
+  return t;
+}
+
 function wtLoadStored() {
   try {
-    const o = JSON.parse(localStorage.getItem(WT_KEY) || 'null');
+    const o = wtStripUnpriced(JSON.parse(localStorage.getItem(WT_KEY) || 'null'));
     return (o && Array.isArray(o.rows) && o.rows.length) ? o : null;
   } catch (e) { return null; }
 }
@@ -1282,6 +1292,7 @@ const wtColIdx = (cells, cands) =>
   cells.findIndex(c => { const t = wtNorm(c); return t && cands.some(k => t.includes(k)); });
 
 function wtParseWorkbook(wb) {
+  let allUnpriced = 0;      // 헤더는 찾았는데 남은 행이 하나도 없던 경우 — 안내 문구를 가르기 위해
   for (const sheetName of wb.SheetNames) {
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
     for (let h = 0; h < Math.min(10, aoa.length); h++) {
@@ -1294,25 +1305,29 @@ function wtParseWorkbook(wb) {
       const iDesc  = wtColIdx(aoa[h], WT_COL.desc);
 
       const rows = [], bases = [];
+      let unpriced = 0;
       for (let r = h + 1; r < aoa.length; r++) {
         const job = String(aoa[r][iJob] ?? '').trim();
         if (!job) continue;                                   // 빈 행·구분선
         const day = wtNum(aoa[r][iWage]);
+        // 단가가 0·공란·'-' 인 행은 표에 이름만 있고 금액이 없는 미공표 직종이다.
+        // 골라도 시급이 채워지지 않아 목록·검색에서 헛걸음만 만들므로 아예 들이지 않는다.
+        // ⇒ 이 아래로 wtRows() 에는 단가가 있는 행만 존재한다(표시 코드의 unpriced 분기는 방어용).
+        if (!(Number.isFinite(day) && day > 0)) { unpriced++; continue; }
         const acc = iAcc >= 0 ? wtNum(aoa[r][iAcc]) : NaN;
         const basis = iBasis >= 0 ? String(aoa[r][iBasis] ?? '').trim() : '';
         if (basis) bases.push(basis);
-        // 단가가 '-' 인 행은 「미공표」 직종이다. 실제 표의 40% 가 여기 해당하므로
-        // 버리지 않고 남겨 검색에는 걸리게 하되, 시급 자동 입력만 하지 않는다.
-        const priced = Number.isFinite(day) && day > 0;
         rows.push({
-          job, dayWage: priced ? day : null, unpriced: !priced,
+          job, dayWage: day, unpriced: false,
           unit: iUnit >= 0 ? wtUnitOf(aoa[r][iUnit]) : null,
           desc: iDesc >= 0 ? String(aoa[r][iDesc] ?? '').trim() : '',
           basis,
           accidentRate: Number.isFinite(acc) && acc > 0 ? acc : null,
         });
       }
-      if (!rows.length) continue;
+      // 남은 행이 없으면 다음 헤더 후보로 — 제목 줄이 우연히 헤더처럼 잡힌 경우가 있다.
+      // 다만 단가 없는 행만 있었다면 그 사실을 기억해 두었다가 정확한 이유를 알려준다.
+      if (!rows.length) { allUnpriced = Math.max(allUnpriced, unpriced); continue; }
 
       // 동명이직 처리 — 같은 이름이 분야·적용월만 달리해 여러 번 나온다
       // (작업반장 건설 215,907 / 제조 147,122 · 기술사 전기 / 건설 …).
@@ -1340,11 +1355,13 @@ function wtParseWorkbook(wb) {
       // 「기준」은 표 전체의 성격이라 가장 많이 나온 값을 대표로 삼는다
       const tally = bases.reduce((m, b) => (m[b] = (m[b] || 0) + 1, m), {});
       const basis = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || '';
-      const unpriced = rows.filter(r => r.unpriced).length;
+      // unpriced = 「단가가 없어 제외한」 행 수. 몇 건이 빠졌는지 보여주려고 남긴다.
       return { rows, sheetName, dup, unpriced, skipped: 0, basis };
     }
   }
-  const err = new Error('직종명 열과 일급 열을 찾지 못했습니다.\n헤더에 「직종·업무명」 중 하나와 「일급·단가·노임」 중 하나가 있어야 합니다.');
+  const err = new Error(allUnpriced
+    ? `단가가 있는 직종이 하나도 없습니다 (${allUnpriced}건 모두 0·공란).\n단가 열에 금액이 채워져 있는지 확인해주세요.`
+    : '직종명 열과 일급 열을 찾지 못했습니다.\n헤더에 「직종·업무명」 중 하나와 「일급·단가·노임」 중 하나가 있어야 합니다.');
   err.wtParse = true;
   throw err;
 }
@@ -1356,6 +1373,7 @@ function wtApply(parsed, meta) {
     basis: parsed.basis || '',                     // 표의 「기준」열 (예: 2026년 01월)
     hoursPerDay: meta.hoursPerDay ?? WT_HOURS_DEFAULT,
     loadedAt: new Date().toISOString(),
+    excluded: parsed.unpriced || 0,                // 단가가 없어 목록에서 뺀 행 수
     rows: parsed.rows,
   };
   if (meta.source === 'upload') wtSave();
@@ -1411,7 +1429,7 @@ function renderWtPanel() {
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
       <span style="font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(wageTable.name)}</span>${badge}
     </div>
-    <div style="font-size:10px;color:var(--tx3);">${wtRows().length}개 직종${(() => { const u = wtRows().filter(r => r.unpriced).length; return u ? ` (미공표 ${u})` : ''; })()}${wtHasDayRows() ? ` · 일급 ÷ ${wtHours()}h` : ''}${wageTable.basis ? ` · ${esc(wageTable.basis)} 기준` : ''}</div>
+    <div style="font-size:10px;color:var(--tx3);">${wtRows().length}개 직종${wageTable.excluded ? ` (단가 없는 ${wageTable.excluded}건 제외)` : ''}${wtHasDayRows() ? ` · 일급 ÷ ${wtHours()}h` : ''}${wageTable.basis ? ` · ${esc(wageTable.basis)} 기준` : ''}</div>
   </div>`;
 }
 
@@ -1490,7 +1508,7 @@ function importWageTable(input) {
       });
       const notes = [`단가표를 적용했습니다 — ${parsed.rows.length}개 직종.`];
       if (parsed.dup)      notes.push(`같은 이름의 직종 ${parsed.dup}건은 분야·적용월을 붙여 구분했습니다.`);
-      if (parsed.unpriced) notes.push(`단가가 미공표(-)인 ${parsed.unpriced}건은 검색에는 나오지만 시급이 자동 입력되지 않습니다.`);
+      if (parsed.unpriced) notes.push(`단가가 없는(0·공란) ${parsed.unpriced}건은 목록·검색에서 제외했습니다.`);
       const low = parsed.rows.filter(r => !r.unpriced && wtHourlyOf(r) < MIN_WAGE);
       if (low.length) notes.push(`⚠ 환산 시급이 최저임금 미만인 직종이 ${low.length}건 있습니다.`);
       alert(notes.join('\n'));
@@ -4467,7 +4485,7 @@ function applyState(state) {
 
   // 단가표는 업무보다 먼저 세운다 — addWork 가 직종 칸 노출 여부를 여기에 기대고 있다
   if (state.wageTable?.rows?.length) {
-    wageTable = state.wageTable;
+    wageTable = wtStripUnpriced(state.wageTable);
     if (wageTable.source === 'upload') wtSave();
     renderWtPanel();
   }

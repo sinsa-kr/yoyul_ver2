@@ -237,11 +237,31 @@ section('[9] 직종 단가표 — 파싱');
   p = P(makeWageWorkbook(XLSX, [['보통인부', 172068], ['', 999], ['용접공', 282536]]));
   ok('직종명 없는 행은 제외', p.rows.length === 2, `rows=${p.rows.length}`);
 
-  // 단가가 '-' 인 미공표 직종 — 실제 표의 40% 가 여기 해당해서 버리면 안 된다
-  p = P(makeWageWorkbook(XLSX, [['보통인부', 172068], ['연마공', '-'], ['함석공', '']]));
-  ok('★ 미공표(-) 직종도 보존', p.rows.length === 3 && p.unpriced === 2, `rows=${p.rows.length} unpriced=${p.unpriced}`);
-  ok('미공표 행에 unpriced 표시', p.rows[1].unpriced === true && p.rows[1].dayWage === null);
+  // 단가가 0·공란·'-' 인 행은 고를 수 없는 직종이라 목록·검색에 넣지 않는다
+  p = P(makeWageWorkbook(XLSX, [['보통인부', 172068], ['연마공', '-'], ['함석공', ''], ['조력공', 0]]));
+  ok('★ 단가 없는 직종은 제외', p.rows.length === 1 && p.rows[0].job === '보통인부', `rows=${p.rows.map(r=>r.job).join(',')}`);
+  ok('제외 건수를 보고', p.unpriced === 3, `unpriced=${p.unpriced}`);
   ok('단가 있는 행은 그대로', p.rows[0].unpriced === false && p.rows[0].dayWage === 172068);
+
+  // 제외된 직종은 검색·목록 어느 쪽에서도 잡히지 않아야 한다
+  win.wtApply(p, { name: 'u', source: 'upload', fileName: 'u.xlsx' });
+  ok('제외된 직종은 조회되지 않음', win.wtFind('연마공') === null && win.wtFind('함석공') === null);
+  ok('0원 직종도 조회되지 않음', win.wtFind('조력공') === null);
+  ok('제외된 직종은 검색 결과에 없음',
+     win.jobMatches('공').every(m => m.r.job !== '연마공' && m.r.job !== '함석공'),
+     win.jobMatches('공').map(m => m.r.job).join(','));
+  win.renderWtList();
+  ok('제외된 직종은 목록보기에 없음', !A.$('wtList').textContent.includes('연마공'));
+  ok('패널에 제외 건수 표시', A.txt('wtStatus').includes('3건 제외'), A.txt('wtStatus'));
+
+  // 단가 없는 행이 빠지면서 동명이직이 하나만 남으면 구분자도 붙지 않아야 한다
+  p = P(makeWageWorkbook(XLSX, [['작업반장', 215907], ['작업반장', '-']]));
+  ok('★ 남는 동명이직이 1건이면 구분자 없음', p.rows.length === 1 && p.rows[0].job === '작업반장', p.rows.map(r=>r.job).join('|'));
+
+  // 단가가 하나도 없는 표는 "열을 못 찾았다"가 아니라 진짜 이유를 알려야 한다
+  let wtErr = null;
+  try { P(makeWageWorkbook(XLSX, [['연마공', '-'], ['함석공', '']])); } catch (e) { wtErr = e; }
+  ok('★ 전부 단가 없으면 그 이유로 거절', !!wtErr && wtErr.message.includes('단가가 있는 직종이 하나도'), wtErr?.message);
 
   // 동명이직 — 분야·적용월만 다른 같은 이름. 첫 행만 남기면 나머지를 고를 수 없다
   p = P(makeWageWorkbook(XLSX, [
@@ -466,20 +486,25 @@ section('[10] 직종 단가표 — 환산 · 선택 · 시급 수정');
   win.onJobPick(1, '저임금직');
   ok('저임금 직종(60,000÷8=7,500) → 최저임금 경고', A.vis('wWarn_1') && A.num('wRate_1') === 7500);
 
-  // ── 미공표 직종은 시급을 건드리지 않는다 ──
+  // ── 단가 없는 직종은 아예 고를 수 없다 ──
   win.wtApply(win.wtParseWorkbook(makeWageWorkbook(XLSX, [
-    ['보통인부', 172068], ['연마공', '-'],
+    ['보통인부', 172068], ['연마공', '-'], ['조력공', 0],
   ])), { name: 'u', source: 'upload', fileName: 'u.xlsx' });
   win.onJobPick(1, '보통인부');
   ok('유상 직종 선택 → 시급 채움', A.num('wRate_1') === 21509);
-  A.set('wRate_1', '18,000');
-  win.onJobPick(1, '연마공');
-  ok('★ 미공표 직종 선택 시 시급 불변', A.num('wRate_1') === 18000, A.$('wRate_1').value);
-  ok('미공표 직종도 선택은 됨', A.$('wJob_1').value === '연마공');
-  ok('근거에 미공표 안내', A.$('wJobNote_1').textContent.includes('단가 미공표'), A.$('wJobNote_1').textContent);
+
   A.set('wJob_1', ''); win.openJobList(1);
-  ok('목록에서도 미공표 표기', A.$('wJobList_1').textContent.includes('단가 미공표'));
-  ok('미공표는 환산 시급 null', win.wtRateOf('연마공') === null);
+  const jl = A.$('wJobList_1').textContent;
+  ok('★ 단가 없는 직종은 목록에 안 뜸', !jl.includes('연마공') && !jl.includes('조력공'), jl);
+  ok('단가 있는 직종은 그대로 뜸', jl.includes('보통인부'));
+  ok('제외된 직종은 환산 시급 null', win.wtRateOf('연마공') === null);
+
+  // 직접 타이핑해도 표에 없는 이름이라 확정되지 않고 직전 선택으로 되돌아간다
+  A.set('wRate_1', '18,000');
+  A.$('wJob_1').dataset.lastJob = '보통인부';
+  A.set('wJob_1', '연마공'); win.resolveJobInput(1);
+  ok('★ 제외된 직종은 타이핑해도 확정 안 됨', A.$('wJob_1').value === '보통인부', A.$('wJob_1').value);
+  ok('되돌아가도 수정한 시급은 보존', A.num('wRate_1') === 18000, A.$('wRate_1').value);
 
   // 환산 기준 변경
   win.onJobPick(1, '보통인부');
@@ -578,6 +603,24 @@ section('[12] 단가표 로딩 순서 · 상태 배선');
   const restored = C.win.workIdsInOrder().find(id => C.$(`wJob_${id}`)?.value === '보관직종');
   ok('저장본 로드로 직종 복원', !!restored, JSON.stringify(C.win.collectState().works.map(w => w.jobTitle)));
   ok('복원 후 직종 칸 노출', C.vis('wJobRow_1'));
+
+  // ── 이 규칙이 생기기 전의 저장본 — 단가 없는 행이 표에 박혀 있다 ──
+  const legacy = JSON.parse(JSON.stringify(st));
+  legacy.wageTable.rows.push(
+    { job: '연마공', dayWage: null, unpriced: true, unit: null, desc: '', basis: '', accidentRate: null },
+    { job: '조력공', dayWage: 0,    unpriced: true, unit: null, desc: '', basis: '', accidentRate: null },
+  );
+  const D = load({ xlsx: XLSX });
+  D.win.applyState(legacy);
+  ok('★ 옛 저장본의 단가 없는 행도 걸러짐', D.win.wtRows().length === 1, JSON.stringify(D.win.wtRows().map(r => r.job)));
+  ok('걸러진 직종은 조회 안 됨', D.win.wtFind('연마공') === null && D.win.wtFind('조력공') === null);
+  ok('걸러진 직종은 검색에도 없음', D.win.jobMatches('공').every(m => m.r.job !== '연마공'));
+  ok('남은 직종은 정상 동작', D.win.wtRateOf('보관직종') === 20000);
+  ok('제외 건수 기록', D.win.collectState().wageTable.excluded === 2, String(D.win.collectState().wageTable.excluded));
+
+  // 브라우저 저장본(localStorage)도 같은 기준으로 걸러진다
+  const E = load({ xlsx: XLSX, storage: { rateCalc_v1_wageTable: JSON.stringify(legacy.wageTable) } });
+  ok('★ localStorage 저장본도 걸러짐', E.win.wtRows().length === 1, JSON.stringify(E.win.wtRows().map(r => r.job)));
 
   // resetAll 은 단가표를 남긴다
   A.win.resetAll();
