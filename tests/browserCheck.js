@@ -209,33 +209,81 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     ok('다크에서 입력행이 카드와 구분됨', dk >= 1.05, `대비 ${dk.toFixed(3)}:1`);
     await p.evaluate(() => setTheme('warm'));
 
-    // ── 근무시간 4칸이 잘리지 않는지 ──
-    // 8h초과 라벨을 그리드 안에 넣었더니 1fr 열이 밀려 209 가 "20" 으로 잘렸다.
+    // ── 근무시간 입력부: 포함관계 트리 + 배수 칩 ──
+    // 예전에 8h초과 라벨을 4칸 그리드에 넣었더니 1fr 열이 밀려 209 가 "20" 으로 잘렸다.
     // DOM 검사로는 값이 멀쩡해 보여서 못 잡는다 — 실제 렌더 폭으로만 확인된다.
     await p.evaluate(() => { $('wShift_1').value = 'day'; onShiftChange(1); });
     await p.fill('#wWk_1', '12'); await p.fill('#wWkOver_1', '4');
     await p.waitForTimeout(300);
     const hrs = await p.evaluate(() => {
-      const ids = ['wReg_1', 'wOT_1', 'wNt_1', 'wWk_1'];
+      const ids = ['wReg_1', 'wOT_1', 'wNt_1', 'wWk_1', 'wWkOver_1'];
       const cells = ids.map(id => {
         const e = document.getElementById(id);
-        return { id, w: e.getBoundingClientRect().width, clipped: e.scrollWidth > e.clientWidth + 1 };
+        return { id, w: Math.round(e.getBoundingClientRect().width),
+                 clipped: e.scrollWidth > e.clientWidth + 1 };
       });
-      const g = document.getElementById('wReg_1').closest('div[style*=grid]');
-      return { cells, widths: cells.map(c => Math.round(c.w)),
-               anyClipped: cells.some(c => c.clipped),
-               gridOver: g.scrollWidth > g.clientWidth + 1,
-               page: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+      const rows = [...document.querySelectorAll('#work_1 .hrs-row')];
+      // .k 는 폭이 고정이라 박스 left 는 전부 같다 — 실제로 눈에 보이는 건 텍스트 시작점이다
+      const textLeft = el => { const r = document.createRange(); r.selectNodeContents(el);
+                               return Math.round(r.getBoundingClientRect().left); };
+      const ind = k => textLeft(document.querySelector(`#work_1 .hrs-row .k.${k}`));
+      const plain = textLeft(document.querySelector('#work_1 .hrs-row .k'));
+      return { cells, anyClipped: cells.some(c => c.clipped),
+               widths: cells.map(c => c.w),
+               rowOver: rows.some(r => r.scrollWidth > r.clientWidth + 1),
+               page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+               nRows: rows.length,
+               indentBase: plain, indentSub: ind('sub'), indentSub2: ind('sub2'),
+               muls: [...document.querySelectorAll('#work_1 .hrs-row .mul')].map(e => e.textContent.trim()),
+               note: (document.querySelector('#work_1 .hrs-note') || {}).textContent || '' };
     });
     ok('★ 근무시간 입력칸이 잘리지 않음', !hrs.anyClipped, JSON.stringify(hrs.cells));
-    ok('★ 4칸 폭이 고르게 유지됨',
+    ok('★ 입력칸 폭이 고르게 유지됨',
        Math.max(...hrs.widths) - Math.min(...hrs.widths) <= 2, JSON.stringify(hrs.widths));
-    ok('근무시간 그리드 넘침 없음', !hrs.gridOver && !hrs.page);
-    ok('8h초과 입력 노출', await p.locator('#wWkOver_1').isVisible());
-    // 8h초과를 휴일근로보다 크게 넣으면 경고
-    await p.fill('#wWkOver_1', '99'); await p.waitForTimeout(250);
-    ok('8h초과 > 휴일근로 → 경고', await p.locator('#wHolOverWarn_1').isVisible());
-    await p.fill('#wWkOver_1', '4'); await p.waitForTimeout(250);
+    ok('행 넘침·페이지 가로스크롤 없음', !hrs.rowOver && !hrs.page);
+    ok('다섯 줄로 구성', hrs.nRows === 5, String(hrs.nRows));
+    // 포함관계는 들여쓰기 단계로 드러난다 — 기본급 대상 < 연장·야간·휴일 < 8h초과
+    ok('★ 가산 항목이 기본급 대상보다 들여써짐', hrs.indentSub > hrs.indentBase,
+       `${hrs.indentBase} → ${hrs.indentSub}`);
+    ok('★ 8h초과가 휴일근로보다 한 단 더 들여써짐', hrs.indentSub2 > hrs.indentSub,
+       `${hrs.indentSub} → ${hrs.indentSub2}`);
+    ok('배수 칩 표시', hrs.muls.join('|') === '×1.0|+0.5|+0.5|+0.5|+0.5 더', hrs.muls.join('|'));
+    ok('포함관계 안내문', hrs.note.includes('포함된'), hrs.note);
+
+    // 휴일 정액을 켜면 배수 칩이 「정액」으로 바뀌고 8h초과 줄이 흐려진다
+    await p.check('#wHolFlat_1'); await p.fill('#wHolRate_1', '20000');
+    await p.waitForTimeout(300);
+    const flat = await p.evaluate(() => ({
+      mul: document.querySelector('#wMulHol_1').textContent.trim(),
+      dim: getComputedStyle(document.querySelector('#wHolOverRow_1')).opacity }));
+    ok('★ 휴일 정액 → 배수 칩 「정액」', flat.mul === '정액', flat.mul);
+    ok('★ 휴일 정액 → 8h초과 줄 흐려짐', parseFloat(flat.dim) < 1, flat.dim);
+    await p.uncheck('#wHolFlat_1'); await p.waitForTimeout(300);
+    ok('정액 해제 → 배수 칩 복귀',
+       (await p.locator('#wMulHol_1').innerText()).trim() === '+0.5');
+
+    // 경고 2종을 동시에 띄워도 잘리지 않아야 한다 — 처음엔 「휴일근로보다 큼」이 오른쪽에서 잘렸다
+    await p.uncheck('#wExempt_1');
+    await p.fill('#wOT_1', '999'); await p.fill('#wWkOver_1', '99');
+    await p.waitForTimeout(300);
+    const warn = await p.evaluate(() => {
+      const rows = [...document.querySelectorAll('#work_1 .hrs-row')];
+      const vis = el => el.offsetParent !== null;
+      const fits = el => { const r = el.getBoundingClientRect();
+        const p = el.closest('.hrs').getBoundingClientRect();
+        return r.right <= p.right + 1 && r.left >= p.left - 1; };
+      return { otShown: vis(document.querySelector('#wOtWarn_1')),
+               ovShown: vis(document.querySelector('#wHolOverWarn_1')),
+               otFits: fits(document.querySelector('#wOtWarn_1')),
+               ovFits: fits(document.querySelector('#wHolOverWarn_1')),
+               rowOver: rows.some(r => r.scrollWidth > r.clientWidth + 1),
+               page: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+    });
+    ok('경고 2종 동시 표시', warn.otShown && warn.ovShown, JSON.stringify(warn));
+    ok('★ 경고가 카드 밖으로 잘리지 않음', warn.otFits && warn.ovFits, JSON.stringify(warn));
+    ok('★ 경고가 떠도 행 넘침 없음', !warn.rowOver && !warn.page);
+    await p.fill('#wOT_1', '0'); await p.fill('#wWkOver_1', '4');
+    await p.check('#wExempt_1'); await p.waitForTimeout(250);
     ok('되돌리면 경고 사라짐', !(await p.locator('#wHolOverWarn_1').isVisible()));
 
     await p.close();
