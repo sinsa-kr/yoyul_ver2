@@ -96,6 +96,121 @@ section('[3] 근무시간 프리셋 · 캘린더');
 }
 
 // ────────────────────────────────────────────────────────────
+section('[3-1] 휴일근로 가산 — 근기법 §56②');
+{
+  // §56② 1호 8시간 이내 휴일근로 50% 가산 / 2호 8시간 초과 100% 가산.
+  // "제1항에도 불구하고" = 휴일근로 가산이 연장 가산을 대체한다 → 중복 지급 없음
+  // (대법원 2018.6.21. 2011다112391 전원합의체). 과거에는 휴일시간이 주40h 초과 판정에
+  // 들어가 연장 0.5 가 겹쳐 1.5배여야 할 휴일근로가 2.0배로 계산됐다.
+  const A = load();
+  const { win } = A;
+  const F = 365 / 7 / 12;                       // 주 → 월 환산
+  const d8 = { start: '08:00', end: '16:00' }, d12 = { start: '08:00', end: '20:00' };
+  const wk = (spec) => { const days = Array(7).fill(null);
+    for (const [k, v] of Object.entries(spec)) days[+k] = v;
+    return win.computePatternHours({ weeks: 1, days }, false); };
+  const WD = { 1: d8, 2: d8, 3: d8, 4: d8, 5: d8 };          // 월~금 40h
+  const M = h => Math.round(h * F);                            // 월환산 기대값
+
+  // 시급 1원 가정의 총 지급 배수 — calcOne 과 같은 산식으로 검산
+  const pay = r => r.hoursRegular + r.hoursOvertime * 0.5
+                 + r.holidayHours * 0.5 + Math.min(r.holidayOver, r.holidayHours) * 0.5;
+
+  let r = wk({ ...WD });
+  ok('평일 40h — 연장 0', r.hoursOvertime === 0 && r.holidayHours === 0);
+
+  r = wk({ ...WD, 6: d8 });
+  ok('★ 평일40h + 토8h — 휴일시간이 연장으로 새지 않음', r.hoursOvertime === 0, `연장 ${r.hoursOvertime}h`);
+  ok('토요일도 휴일근로로 계상', r.holidayHours === M(8), `${r.holidayHours} vs ${M(8)}`);
+  ok('★ 지급 1.5배 (2.0배 아님)', pay(r) === M(48) + M(8) * 0.5, `${pay(r)}`);
+
+  r = wk({ ...WD, 0: d8 });
+  ok('★ 평일40h + 일8h — 연장 0', r.hoursOvertime === 0, `연장 ${r.hoursOvertime}h`);
+  ok('8h 이하라 초과분 없음', r.holidayOver === 0);
+
+  r = wk({ ...WD, 0: d8, 6: d8 });
+  ok('★ 평일40h + 토·일 각 8h — 연장 0', r.hoursOvertime === 0, `연장 ${r.hoursOvertime}h`);
+  ok('휴일 16h 계상', r.holidayHours === M(16), String(r.holidayHours));
+
+  r = wk({ ...WD, 0: d12 });
+  ok('★ 평일40h + 일12h — 연장 0', r.hoursOvertime === 0, `연장 ${r.hoursOvertime}h`);
+  ok('★ 8h 초과분 4h 분리', r.holidayOver === M(4), `${r.holidayOver} vs ${M(4)}`);
+  ok('★ 지급 = 소정 + 8h이내 0.5 + 초과 1.0', pay(r) === M(52) + M(12) * 0.5 + M(4) * 0.5, String(pay(r)));
+
+  r = wk({ 0: d12 });
+  ok('일12h 만 — 평일 근무 없어도 초과분 분리', r.holidayOver === M(4) && r.hoursOvertime === 0);
+
+  // 평일 연장은 그대로 살아 있어야 한다 (휴일 제외가 평일까지 먹지 않는지)
+  const d10 = { start: '08:00', end: '18:00' };
+  r = wk({ 1: d10, 2: d10, 3: d10, 4: d10, 5: d10 });         // 평일 50h
+  ok('평일 50h — 연장 10h 그대로', r.hoursOvertime === M(10), `${r.hoursOvertime} vs ${M(10)}`);
+  // 일8h 초과분이 주40h 초과분보다 크면 큰 쪽을 쓴다 (기존 이중계산 방지 규칙 유지)
+  r = wk({ 1: d12, 2: d12, 3: d12, 4: d12 });                 // 평일 48h · 일12h×4일
+  ok('평일 4일×12h — 일8h초과(16h) > 주40h초과(8h) → 16h',
+     r.hoursOvertime === M(16), `${r.hoursOvertime} vs ${M(16)}`);
+  // 휴일이 섞여도 평일 연장 판정이 흔들리지 않는다
+  r = wk({ 1: d10, 2: d10, 3: d10, 4: d10, 5: d10, 0: d8 });  // 평일 50h + 일 8h
+  ok('★ 평일50h + 일8h — 연장은 평일분 10h 만', r.hoursOvertime === M(10), `${r.hoursOvertime} vs ${M(10)}`);
+  ok('그 경우 휴일근로는 따로 8h', r.holidayHours === M(8), String(r.holidayHours));
+
+  // calcOne 이 실제로 그 배수를 지급하는지 (시급 1000원)
+  A.set('wRate_1', '1,000'); A.set('wReg_1', 52); A.set('wOT_1', 0);
+  A.set('wNt_1', 0); A.set('wWk_1', 12); A.set('wWkOver_1', 4);
+  A.check('wHolFlat_1', false); A.check('wRest_1', false);
+  let res = win.computeAll().results[0];
+  ok('★ calcOne 휴일수당 = 1000×(12×0.5 + 4×0.5)', res.wHol === 1000 * (12 * 0.5 + 4 * 0.5), String(res.wHol));
+
+  // 8h초과를 휴일근로보다 크게 넣어도 가산이 부풀지 않는다
+  A.set('wWkOver_1', 99); win.calculate();
+  res = win.computeAll().results[0];
+  ok('★ 초과분이 휴일시간을 넘으면 잘라냄', res.wHol === 1000 * (12 * 0.5 + 12 * 0.5), String(res.wHol));
+  ok('초과 입력 경고 표시', A.vis('wHolOverWarn_1'));
+  A.set('wWkOver_1', 4); win.calculate();
+  ok('되돌리면 경고 사라짐', !A.vis('wHolOverWarn_1'));
+
+  // 휴일 정액 계약은 초과분 가산을 받지 않는다 — 정액이 그 시간의 대가 전액이므로
+  A.check('wHolFlat_1', true); A.set('wHolRate_1', '20,000'); win.calculate();
+  res = win.computeAll().results[0];
+  ok('★ 휴일 정액이면 초과 가산 없음 (정액×시간)', res.wHol === 20000 * 12, String(res.wHol));
+  A.check('wHolFlat_1', false);
+
+  // 프리셋 5종은 휴일근로를 쓰지 않으므로 금액이 전혀 바뀌지 않아야 한다
+  for (const k of ['day', 'shift2', 'shift3', 'shift43', 'alternate']) {
+    A.set('wShift_1', k); win.onShiftChange(1);
+    ok(`프리셋 ${k} — 8h초과 0`, A.num('wWkOver_1') === 0);
+  }
+
+  // ── 저장 / 복원 ──
+  A.set('wShift_1', 'day'); win.onShiftChange(1);
+  A.set('wWk_1', 12); A.set('wWkOver_1', 4); win.calculate();
+  const st = win.collectState();
+  ok('collectState 에 holidayOver 포함', st.works[0].holidayOver === 4, String(st.works[0].holidayOver));
+
+  const B = load();
+  B.win.applyState(JSON.parse(JSON.stringify(st)));
+  const bid = B.win.workIdsInOrder()[0];
+  ok('★ 복원 후 8h초과 유지', B.num(`wWkOver_${bid}`) === 4, B.$(`wWkOver_${bid}`).value);
+  ok('복원 후 금액 동일', B.win.computeAll().results[0].wHol === win.computeAll().results[0].wHol);
+  ok('★ 휴일근로 있는 저장본 → 정정 안내 표시', B.vis('holRuleNotice'));
+
+  // 구버전 저장본 — holidayOver 없이도 열리고, 8h 이내와 같이 0.5 가산만 받는다
+  const legacy = JSON.parse(JSON.stringify(st));
+  legacy.works.forEach(w => delete w.holidayOver);
+  const C = load();
+  C.win.applyState(legacy);
+  const cid = C.win.workIdsInOrder()[0];
+  ok('★ 구버전 저장본은 8h초과 0 으로 열림', C.num(`wWkOver_${cid}`) === 0, C.$(`wWkOver_${cid}`).value);
+  ok('구버전 저장본 에러 없음', C.errors.length === 0, C.errors.slice(0, 2).join(' | '));
+
+  // 휴일근로가 없으면 안내를 띄우지 않는다 (매번 뜨면 성가시다)
+  const noHol = JSON.parse(JSON.stringify(st));
+  noHol.works.forEach(w => { w.holidayHours = 0; w.holidayOver = 0; });
+  const D = load();
+  D.win.applyState(noHol);
+  ok('휴일근로 없으면 안내 없음', !D.vis('holRuleNotice'));
+}
+
+// ────────────────────────────────────────────────────────────
 section('[4] 경고 — 최저임금 · 연장근로 한도');
 {
   const A = load();

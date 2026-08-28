@@ -209,6 +209,35 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     ok('다크에서 입력행이 카드와 구분됨', dk >= 1.05, `대비 ${dk.toFixed(3)}:1`);
     await p.evaluate(() => setTheme('warm'));
 
+    // ── 근무시간 4칸이 잘리지 않는지 ──
+    // 8h초과 라벨을 그리드 안에 넣었더니 1fr 열이 밀려 209 가 "20" 으로 잘렸다.
+    // DOM 검사로는 값이 멀쩡해 보여서 못 잡는다 — 실제 렌더 폭으로만 확인된다.
+    await p.evaluate(() => { $('wShift_1').value = 'day'; onShiftChange(1); });
+    await p.fill('#wWk_1', '12'); await p.fill('#wWkOver_1', '4');
+    await p.waitForTimeout(300);
+    const hrs = await p.evaluate(() => {
+      const ids = ['wReg_1', 'wOT_1', 'wNt_1', 'wWk_1'];
+      const cells = ids.map(id => {
+        const e = document.getElementById(id);
+        return { id, w: e.getBoundingClientRect().width, clipped: e.scrollWidth > e.clientWidth + 1 };
+      });
+      const g = document.getElementById('wReg_1').closest('div[style*=grid]');
+      return { cells, widths: cells.map(c => Math.round(c.w)),
+               anyClipped: cells.some(c => c.clipped),
+               gridOver: g.scrollWidth > g.clientWidth + 1,
+               page: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+    });
+    ok('★ 근무시간 입력칸이 잘리지 않음', !hrs.anyClipped, JSON.stringify(hrs.cells));
+    ok('★ 4칸 폭이 고르게 유지됨',
+       Math.max(...hrs.widths) - Math.min(...hrs.widths) <= 2, JSON.stringify(hrs.widths));
+    ok('근무시간 그리드 넘침 없음', !hrs.gridOver && !hrs.page);
+    ok('8h초과 입력 노출', await p.locator('#wWkOver_1').isVisible());
+    // 8h초과를 휴일근로보다 크게 넣으면 경고
+    await p.fill('#wWkOver_1', '99'); await p.waitForTimeout(250);
+    ok('8h초과 > 휴일근로 → 경고', await p.locator('#wHolOverWarn_1').isVisible());
+    await p.fill('#wWkOver_1', '4'); await p.waitForTimeout(250);
+    ok('되돌리면 경고 사라짐', !(await p.locator('#wHolOverWarn_1').isVisible()));
+
     await p.close();
   }
 

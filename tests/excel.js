@@ -159,6 +159,24 @@ section('[4] 단가표 근거 출력');
 }
 
 // ────────────────────────────────────────────────────────────
+section('[3-1] 휴일 8h초과 (§56②2호)');
+{
+  const { wb } = grab(A => {
+    A.set('wRate_1', '1,000'); A.set('wReg_1', 52); A.set('wOT_1', 0);
+    A.set('wNt_1', 0); A.set('wWk_1', 12); A.set('wWkOver_1', 4);
+    A.win.calculate();
+  });
+  const det = wb.Sheets['산정내역'];
+  const rOv = findContains(det, '8h초과'), rHol = findRow(det, '휴일수당');
+  ok('산정내역에 8h초과 행', rOv > 0, String(rOv));
+  ok('8h초과 = 4h', det[ref(rOv, 2)]?.v === 4, String(det[ref(rOv, 2)]?.v));
+  ok('★ 휴일수당 = 1000×(12×0.5 + 4×0.5)', det[ref(rHol, 2)]?.v === 1000 * 8,
+     String(det[ref(rHol, 2)]?.v));
+  // 엑셀에서 손으로 8h초과를 부풀려도 MIN 클램프가 막는다
+  verifyFormulas(wb, '휴일 8h초과 워크북');
+}
+
+// ────────────────────────────────────────────────────────────
 section('[4-1] 기준시급 × 적용률 출력');
 {
   // 안 쓰면 시트 구조가 종전과 완전히 같아야 한다

@@ -113,6 +113,12 @@ function makeEvaluator(wb) {
         const p = Math.pow(10, args[1]);
         return Math.round(args[0] * p) / p;
       }
+      // MIN/MAX — 휴일 8h초과 클램프(§56②)에 쓴다. 범위 인자도 펼쳐서 받는다.
+      if (fname === 'MIN' || fname === 'MAX') {
+        const flat = args.flatMap(a => asArr(a).map(v => Number(v) || 0));
+        if (!flat.length) return 0;
+        return fname === 'MIN' ? Math.min(...flat) : Math.max(...flat);
+      }
       if (fname === 'COUNTIF') return asArr(args[0]).filter(v => matchCriteria(v, args[1])).length;
       if (fname === 'SUMIF') {
         const rr = asArr(args[0]), ss = asArr(args[2] ?? args[0]);
