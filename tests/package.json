@@ -5,7 +5,7 @@
   "description": "요율산정 대시보드 회귀 검증 하네스",
   "scripts": {
     "test": "node smoke.js && node excel.js",
-    "browser": "node browserCheck.js"
+    "browser": "node browserCheck.js && node inputCommit.js"
   },
   "dependencies": {
     "jsdom": "^29.1.1",

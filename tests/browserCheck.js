@@ -158,6 +158,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
 
     // 시급 수동 수정 후 되돌리기
     await p.fill('#wRate_1', '30000');
+    await p.press('#wRate_1', 'Enter');
     await p.waitForTimeout(250);
     ok('시급 수동 수정 가능', (await p.inputValue('#wRate_1')).replace(/,/g, '') === '30000');
     ok('근거가 직접 수정으로 전환', (await p.locator('#wJobNote_1').innerText()).includes('직접 수정'));
@@ -177,6 +178,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
        (await p.locator('#wBaseRow_1').isVisible()) && !(await p.locator('#wPctBtn_1').isVisible()));
 
     await p.fill('#wPct_1', '85');
+    await p.press('#wPct_1', 'Enter');
     await p.waitForTimeout(250);
     const fit = await p.evaluate(() => {
       const row = document.querySelector('#wBaseRow_1');
@@ -214,6 +216,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     // DOM 검사로는 값이 멀쩡해 보여서 못 잡는다 — 실제 렌더 폭으로만 확인된다.
     await p.evaluate(() => { $('wShift_1').value = 'day'; onShiftChange(1); });
     await p.fill('#wWk_1', '12'); await p.fill('#wWkOver_1', '4');
+    await p.press('#wWkOver_1', 'Enter');
     await p.waitForTimeout(300);
     const hrs = await p.evaluate(() => {
       const ids = ['wReg_1', 'wOT_1', 'wNt_1', 'wWk_1', 'wWkOver_1'];
@@ -252,6 +255,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
 
     // 휴일 정액을 켜면 배수 칩이 「정액」으로 바뀌고 8h초과 줄이 흐려진다
     await p.check('#wHolFlat_1'); await p.fill('#wHolRate_1', '20000');
+    await p.press('#wHolRate_1', 'Enter');
     await p.waitForTimeout(300);
     const flat = await p.evaluate(() => ({
       mul: document.querySelector('#wMulHol_1').textContent.trim(),
@@ -265,6 +269,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     // 경고 2종을 동시에 띄워도 잘리지 않아야 한다 — 처음엔 「휴일근로보다 큼」이 오른쪽에서 잘렸다
     await p.uncheck('#wExempt_1');
     await p.fill('#wOT_1', '999'); await p.fill('#wWkOver_1', '99');
+    await p.press('#wWkOver_1', 'Enter');
     await p.waitForTimeout(300);
     const warn = await p.evaluate(() => {
       const rows = [...document.querySelectorAll('#work_1 .hrs-row')];
@@ -283,6 +288,7 @@ async function drag(page, a, b, { ctrl = false } = {}) {
     ok('★ 경고가 카드 밖으로 잘리지 않음', warn.otFits && warn.ovFits, JSON.stringify(warn));
     ok('★ 경고가 떠도 행 넘침 없음', !warn.rowOver && !warn.page);
     await p.fill('#wOT_1', '0'); await p.fill('#wWkOver_1', '4');
+    await p.press('#wWkOver_1', 'Enter');
     await p.check('#wExempt_1'); await p.waitForTimeout(250);
     ok('되돌리면 경고 사라짐', !(await p.locator('#wHolOverWarn_1').isVisible()));
 

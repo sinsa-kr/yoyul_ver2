@@ -1711,7 +1711,11 @@ let activeTab = 'calc';
 // UTIL
 // ================================================================
 const $   = id => document.getElementById(id);
-const gv  = id => Math.max(0, parseFloat(String($(id)?.value ?? '').replace(/,/g, '')) || 0); // 콤마 제거 후 파싱, 음수 방어
+const gv  = id => {
+  const el = $(id), edit = workNumberEdits.get(el);
+  const value = edit?.dirty ? edit.committed : el?.value;
+  return Math.max(0, parseFloat(String(value ?? '').replace(/,/g, '')) || 0);
+}; // 편집 중인 업무 숫자는 직전 확정값으로 계산
 const gc  = id => $(id)?.checked || false;
 const fmt  = n => Math.round(n).toLocaleString('ko-KR') + '원';
 const fmtn = n => Math.round(n).toLocaleString('ko-KR');
@@ -1729,6 +1733,59 @@ function fmtMoney(el) {
     if (/\d/.test(el.value[i]) && ++seen === digitsBeforeCursor) { pos = i + 1; break; }
   }
   el.setSelectionRange(pos, pos);
+}
+
+// 업무 숫자만 Enter/포커스 이동 때 확정한다. 검색·체크박스는 기존 동작을 유지한다.
+const workNumberEdits = new WeakMap();
+const pendingWorkNumbers = new Set();
+function bindWorkNumberInputs(card, id) {
+  card.querySelectorAll('input[type="number"], input[inputmode="numeric"]').forEach(el => {
+    const money = el.type === 'text';
+    const edit = { committed: el.value, dirty: false };
+    workNumberEdits.set(el, edit);
+    el.removeAttribute('oninput');
+    el.addEventListener('focus', () => {
+      if (!edit.dirty) edit.committed = el.value;
+    });
+    el.addEventListener('input', () => {
+      if (money) fmtMoney(el);
+      edit.dirty = true;
+      pendingWorkNumbers.add(el);
+    });
+    el.addEventListener('blur', () => commitWorkNumber(el));
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      commitWorkNumber(el);
+    });
+    el.dataset.workId = id;
+  });
+}
+
+function commitWorkNumber(el) {
+  const edit = workNumberEdits.get(el);
+  if (!edit?.dirty) return;
+  pendingWorkNumbers.delete(el);
+  edit.dirty = false;
+  if (!el.isConnected) return;
+  const raw = el.value.replace(/,/g, '').trim();
+  const num = Number(raw);
+  if (!raw || !Number.isFinite(num) || num < 0) el.value = edit.committed;
+  else if (el.id.startsWith('wHead_')) el.value = Math.max(1, Math.round(num));
+  if (el.type === 'text') fmtMoney(el);
+  const changed = Number(el.value.replace(/,/g, '')) !== Number(edit.committed.replace(/,/g, ''));
+  edit.committed = el.value;
+  if (!changed) return;
+  const id = Number(el.dataset.workId);
+  if (/^w(Base|Pct)_/.test(el.id)) onBaseChange(id);
+  else {
+    if (el.id.startsWith('wRate_')) renderJobNote(id);
+    calculate();
+  }
+}
+
+function commitPendingWorkNumbers() {
+  for (const el of pendingWorkNumbers) commitWorkNumber(el);
 }
 
 function rvd(id) { $(id).value = DEFAULT_RATES[id]; calculate(); } // CONFIG 기본값 복원
@@ -1961,6 +2018,7 @@ function addWork(p, atTop = false) {
   const list = $('workList');
   if (atTop) list.insertBefore(div, list.firstChild);
   else list.appendChild(div);
+  bindWorkNumberInputs(div, id);
   // 단가표가 있을 때만 직종 칸을 노출한다 (없으면 종전 화면과 동일)
   if (wtHas()) $(`wJobRow_${id}`).style.display = 'block';
   $(`wJob_${id}`).dataset.lastJob = (p.jobTitle || '').trim();
@@ -3540,6 +3598,7 @@ function copyText(text) {
 }
 
 function copyResult() {
+  commitPendingWorkNumbers();
   const base = computeAll();
   const { results, totHead, grandTot } = base;
 
@@ -3908,6 +3967,7 @@ function buildCommonInputSheet(base) {
 }
 
 function exportExcel() {
+  commitPendingWorkNumbers();
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
 
   const base = computeAll();
@@ -4662,6 +4722,7 @@ function getSaves() {
 function setSaves(arr) { localStorage.setItem(SL_KEY, JSON.stringify(arr)); }
 
 function collectState() {
+  commitPendingWorkNumbers();
   const works = [];
   for (const i of workIdsInOrder()) {          // 화면에 보이는 순서 그대로 저장
     const pattern = $(`work_${i}`).dataset.pattern;

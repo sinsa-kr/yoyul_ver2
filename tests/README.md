@@ -13,6 +13,7 @@ npx playwright install chromium
 node smoke.js        # 계산·경고·저장복원·단가표  (jsdom)
 node excel.js        # 엑셀 출력 + 전 수식 재계산 검증
 node browserCheck.js # 실제 브라우저 — 자동로드·드래그앤드롭·테마
+node inputCommit.js  # 실제 브라우저 — 업무 숫자 Enter/포커스 이동 확정·저장복원
 
 node realcheck.js    # ../단가표.xlsx 를 갈아끼운 뒤 잘 읽히는지 점검
 ```
