@@ -4,494 +4,642 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>요율산정 계산기 사용설명서</title>
+<script>
+/* 대시보드와 같은 테마로 연다 — 대시보드가 localStorage 에 남긴 값을 읽는다.
+   첫 렌더 전에 입혀야 색이 번쩍이지 않으므로 <head> 에 둔다. */
+(function () {
+  var KEY = 'rateCalc_theme', THEMES = ['warm', 'light', 'dark'];
+  function apply(t) { if (THEMES.indexOf(t) >= 0) document.documentElement.dataset.theme = t; }
+  try { apply(localStorage.getItem(KEY)); } catch (e) {}
+  // 설명서를 띄워 둔 채 대시보드에서 테마를 바꾸면 따라 바뀐다
+  window.addEventListener('storage', function (e) { if (e.key === KEY) apply(e.newValue); });
+})();
+</script>
 <style>
-  :root{
-    --tx:#3f3024; --tx2:#6f6050; --tx3:#9a8a7a;
+  /* 색 토큰 — 값은 요율산정_대시보드_v2.html 의 테마 3종과 같다 */
+  :root {
+    color-scheme: light;
+    --tx:#4a3828; --tx2:#7a6a58; --tx3:#a09080;
     --bg:#f5ede0; --panel:#fdf9f3; --panel2:#faf5ee; --inset:#f0e9dc; --chip:#f0e8d8;
     --line:#ddd0bc; --line2:#cfc0a8;
-    --head:#33524c; --head2:#47645d; --head-sub:#bcd6cd;
-    --accent:#a07040; --ok:#4d7a5a; --ok-bg:#dff0e4; --info:#4a6a9a; --info-bg:#eef3f8;
-    --warn:#8a5a10; --warn-bg:#fbe6bd; --danger:#9a3828; --danger-bg:#fde8e2;
-    --purple:#6858a0; --purple-bg:#eae5f5;
+    --head:#33524c; --tab:#47645d; --head-sub:#bcd6cd; --head-em:#e4f0ea;
+    --accent:#a07040; --link:#9b7050;
+    --ok-tx:#3d6b4a; --ok-bg:#dff0e4; --info:#5a7aaa; --info-bg:#eef3f8;
+    --am-tx:#9e7040; --am-bg:#f5edd8; --warn-line:#b8781a;
+    --danger-tx:#9a3828; --danger-bg:#fef0ec;
+    --btn-accent:#a07040; --btn-ok:#4d7a5a; --btn-save:#5a6a9a;
+    --yel-bg:#fff4cc; --yel-line:#e0cf8a;
   }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --tx:#1f2933; --tx2:#54606c; --tx3:#8c98a4;
+    --bg:#eef1f4; --panel:#ffffff; --panel2:#f7f9fb; --inset:#f1f4f7; --chip:#e9edf1;
+    --line:#dde3e9; --line2:#c9d2da;
+    --head:#2f5551; --tab:#446b66; --head-sub:#b9d3cd; --head-em:#ffffff;
+    --accent:#a8641f; --link:#a8641f;
+    --ok-tx:#2f7350; --ok-bg:#e4f2ea; --info:#33619e; --info-bg:#eaf1fa;
+    --am-tx:#a8641f; --am-bg:#f7edde; --warn-line:#c8850f;
+    --danger-tx:#992424; --danger-bg:#fdeeee;
+    --btn-accent:#a8641f; --btn-ok:#2f7350; --btn-save:#425d8f;
+    --yel-bg:#fff6d6; --yel-line:#e3d08c;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --tx:#e3e7eb; --tx2:#a3aeb8; --tx3:#6d7883;
+    --bg:#14181c; --panel:#1d232a; --panel2:#232a32; --inset:#272f38; --chip:#2c353f;
+    --line:#333d47; --line2:#43505c;
+    --head:#20342f; --tab:#2e4741; --head-sub:#96bcb2; --head-em:#eaf4f0;
+    --accent:#d9a05e; --link:#d9a05e;
+    --ok-tx:#7cc79c; --ok-bg:#1e332a; --info:#7fa8e0; --info-bg:#1c2733;
+    --am-tx:#d9a05e; --am-bg:#332b1c; --warn-line:#d9a05e;
+    --danger-tx:#eda3a3; --danger-bg:#33211f;
+    /* 흰 글씨를 얹는 칩은 다크에서 한 톤 낮춰 대비를 확보한다 */
+    --btn-accent:#a8743a; --btn-ok:#3f7d5b; --btn-save:#455a86;
+    --yel-bg:#3d3418; --yel-line:#7a6a30;
+  }
+
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--tx);line-height:1.7;font-size:15px}
-  header{background:var(--head);color:#fff;padding:26px 24px 22px}
-  header .in{max-width:1180px;margin:0 auto}
-  header h1{margin:0;font-size:24px}
-  header p{margin:6px 0 0;color:var(--head-sub);font-size:13.5px}
-  .wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:230px 1fr;gap:26px;padding:22px 24px 60px}
-  nav{position:sticky;top:16px;align-self:start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 12px;font-size:13px;max-height:calc(100vh - 32px);overflow-y:auto}
-  nav b{display:block;font-size:11px;color:var(--tx3);margin:10px 6px 4px;letter-spacing:.04em}
-  nav b:first-child{margin-top:0}
-  nav a{display:block;color:var(--tx);text-decoration:none;padding:4px 8px;border-radius:5px}
-  nav a:hover{background:var(--chip)}
-  main{min-width:0}
-  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 26px;margin-bottom:18px}
-  h2{margin:0 0 12px;font-size:19px;display:flex;align-items:center;gap:9px}
-  h2 .no{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:7px;background:var(--head);color:#fff;font-size:13px}
-  h2 .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;background:var(--chip);color:var(--tx2)}
-  h3{font-size:15.5px;margin:20px 0 6px;color:var(--head)}
+  body{margin:0;font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--tx);line-height:1.65;font-size:15px}
+  a{color:var(--link)}
+  b{font-weight:700}
+
+  header{background:var(--head);color:#fff;padding:22px 16px 0}
+  .in{max-width:980px;margin:0 auto}
+  header h1{margin:0;font-size:22px}
+  header p{margin:4px 0 0;color:var(--head-sub);font-size:13.5px}
+  header p b{color:var(--head-em)}
+  .jump{display:flex;gap:4px;margin-top:16px;overflow-x:auto}
+  .jump a{color:var(--head-sub);text-decoration:none;font-size:13px;padding:7px 14px;border-radius:7px 7px 0 0;background:var(--tab);white-space:nowrap}
+  .jump a:hover{color:#fff}
+
+  main{max-width:980px;margin:0 auto;padding:24px 16px 40px}
+  section{margin-bottom:36px;scroll-margin-top:12px}
+  h2{font-size:19px;margin:0 0 2px;display:flex;align-items:center;gap:9px}
+  h2 .no{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:var(--head);color:#fff;font-size:14px;flex-shrink:0}
+  .lead{color:var(--tx2);font-size:14px;margin:0 0 14px}
   p{margin:6px 0}
-  ul,ol{margin:6px 0;padding-left:22px}
+  ul,ol{margin:6px 0;padding-left:20px}
   li{margin:3px 0}
-  code,.k{font-family:inherit;background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:13px;white-space:nowrap}
-  .btn{display:inline-block;font-size:12.5px;font-weight:700;padding:1px 8px;border-radius:5px;color:#fff;background:var(--head2);white-space:nowrap}
-  .btn.g{background:var(--ok)} .btn.a{background:var(--accent)} .btn.b{background:#5a6a9a}
+
+  /* 화면 속 버튼·칸을 가리키는 표시 */
+  .k{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:13px;white-space:nowrap}
+  .btn{display:inline-block;font-size:12.5px;font-weight:700;padding:0 7px;border-radius:5px;color:#fff;background:var(--tab);white-space:nowrap}
+  .btn.a{background:var(--btn-accent)} .btn.g{background:var(--btn-ok)} .btn.b{background:var(--btn-save)}
+  .yel{background:var(--yel-bg);border:1px solid var(--yel-line);border-radius:3px;padding:0 5px;white-space:nowrap}
+  .chip{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:4px;white-space:nowrap}
+  .c-over{color:var(--danger-tx);background:var(--danger-bg)} .c-warn{color:var(--am-tx);background:var(--am-bg)}
+  .c-eq{color:var(--tx2);background:var(--chip)} .c-under{color:var(--ok-tx);background:var(--ok-bg)}
+  .pin{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--btn-accent);color:#fff;font-size:11.5px;font-weight:700;flex-shrink:0}
+
+  .box{border-radius:8px;padding:10px 14px;margin:12px 0;font-size:14px;border-left:4px solid}
+  .box.tip{background:var(--ok-bg);border-color:var(--ok-tx)}
+  .box.info{background:var(--info-bg);border-color:var(--info)}
+  .box.warn{background:var(--am-bg);border-color:var(--warn-line)}
+
+  /* ① 시작 4단계 */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;list-style:none;padding:0;margin:0;counter-reset:s}
+  .steps li{counter-increment:s;position:relative;margin:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .steps li::before{content:counter(s);display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--btn-accent);color:#fff;font-weight:700;font-size:14px;margin-bottom:8px}
+  .steps li:not(:last-child)::after{content:'›';position:absolute;right:-12px;top:50%;transform:translateY(-50%);color:var(--tx3);font-size:20px;font-weight:700}
+  .steps .t{display:block;font-size:15.5px;margin-bottom:4px}
+  .steps p{margin:0;font-size:13.5px;color:var(--tx2)}
+
+  .mock{border:1px solid var(--line2);border-radius:10px;background:var(--inset);padding:10px;margin:14px 0 0;font-size:12px}
+  .m-hd{background:var(--head);color:#fff;border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+  .m-hd .bs{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+  .m-hd .bs span:not(.pin){background:rgba(255,255,255,.16);border-radius:4px;padding:1px 6px;font-size:11px}
+  .m-tab{display:flex;gap:3px;margin:5px 0}
+  .m-tab span{background:var(--tab);color:var(--head-sub);border-radius:5px 5px 0 0;padding:3px 10px;font-size:11px}
+  .m-tab span.on{background:var(--panel);color:var(--tx);font-weight:700}
+  .m-grid{display:grid;grid-template-columns:1.1fr 1.6fr .9fr;gap:6px}
+  .m-p{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px}
+  .m-p .h{display:flex;align-items:center;gap:4px;font-weight:700;font-size:12.5px}
+  .m-p small{color:var(--tx3);display:block;font-size:11px;margin-top:2px}
+  .cap{font-size:11.5px;color:var(--tx3);margin-top:7px;text-align:center}
+
+  /* ② 꼭 알아둘 것 */
+  .must{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .mk{background:var(--am-bg);border:1px solid var(--line);border-top:4px solid var(--warn-line);border-radius:10px;padding:14px}
+  .mk .ic{font-size:22px;line-height:1}
+  .mk .t{display:block;font-size:15.5px;margin:6px 0 4px}
+  .mk p{margin:0;font-size:13.5px;color:var(--tx2)}
+  .tree{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px}
+  .tree div{display:flex;align-items:center;gap:6px;padding:1px 0}
+  .tree .n{width:92px;color:var(--tx)} .tree .v{width:42px;text-align:right;font-weight:700}
+  .tree .m{font-size:10.5px;font-weight:700;background:var(--chip);border-radius:3px;padding:0 5px;color:var(--tx2)}
+
+  /* ③ 상황별 카드 */
+  .cases{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+  .case{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column}
+  .case h3{margin:0;font-size:15.5px}
+  .where{display:inline-block;align-self:flex-start;margin:6px 0 4px;font-size:12.5px;font-weight:700;color:var(--am-tx);background:var(--am-bg);border-radius:5px;padding:1px 8px}
+  .case ol{font-size:13.5px;padding-left:18px;margin:6px 0}
+  .case .note{font-size:12.5px;color:var(--tx2);margin:2px 0 0}
+  .case .more{margin-top:auto;padding-top:8px;font-size:12.5px;font-weight:700;text-decoration:none}
+  .case .more:hover{text-decoration:underline}
+
+  /* ④ 참고 자료 */
+  .ref-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+  .ref-tools button{font:inherit;font-size:12.5px;font-weight:700;color:var(--link);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 12px;cursor:pointer}
+  .ref-tools button:hover{background:var(--chip)}
+  .grp{font-size:12px;font-weight:700;color:var(--tx3);margin:18px 0 6px;letter-spacing:.03em}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:9px;margin-bottom:6px;scroll-margin-top:12px}
+  summary{cursor:pointer;padding:11px 16px;font-weight:700;font-size:14.5px;list-style:none;display:flex;align-items:baseline;gap:8px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:'+';margin-left:auto;color:var(--tx3);font-size:18px;font-weight:400;line-height:1}
+  details[open] summary::after{content:'−'}
+  summary small{font-weight:400;color:var(--tx3);font-size:12.5px}
+  summary:hover{background:var(--panel2);border-radius:9px}
+  details .body{padding:4px 18px 16px;font-size:14px;border-top:1px solid var(--line)}
+  details h4{font-size:14px;margin:14px 0 4px;color:var(--tx)}
+
+  .tbl{overflow-x:auto}
   table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}
   th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
   th{background:var(--chip);font-size:12.5px;color:var(--tx2)}
   td.r{text-align:right}
-  .tbl{overflow-x:auto}
-  .box{border-radius:8px;padding:10px 14px;margin:10px 0;font-size:14px;border-left:5px solid}
-  .box.tip{background:var(--ok-bg);border-color:var(--ok)}
-  .box.warn{background:var(--warn-bg);border-color:#c8850f;color:#4e3208}
-  .box.info{background:var(--info-bg);border-color:var(--info)}
-  .box b:first-child{margin-right:4px}
-  .steps{counter-reset:s;list-style:none;padding:0}
-  .steps li{counter-increment:s;position:relative;padding:8px 10px 8px 46px;margin:6px 0;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
-  .steps li::before{content:counter(s);position:absolute;left:10px;top:8px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
   .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;font-size:13px}
   .flow span{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;padding:5px 10px}
   .flow i{font-style:normal;color:var(--tx3);font-weight:700}
   .flow .end{background:var(--head);color:#fff;border-color:var(--head);font-weight:700}
+  .flow small{color:var(--tx3)} .flow .end small{color:var(--head-sub)}
 
-  /* 화면 도식 */
-  .mock{border:2px solid var(--line2);border-radius:10px;background:var(--bg);padding:10px;margin:12px 0;font-size:12px}
-  .mock .cap{font-size:11.5px;color:var(--tx3);margin-top:6px;text-align:center}
-  .m-hd{background:var(--head);color:#fff;border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
-  .m-hd .bs{display:flex;gap:4px;flex-wrap:wrap}
-  .m-hd .bs span{background:rgba(255,255,255,.18);border-radius:4px;padding:1px 6px;font-size:10.5px}
-  .m-tab{display:flex;gap:3px;margin:5px 0}
-  .m-tab span{background:var(--head2);color:#dfeee9;border-radius:5px 5px 0 0;padding:3px 10px;font-size:11px}
-  .m-tab span.on{background:var(--panel);color:var(--tx);font-weight:700}
-  .m-grid{display:grid;grid-template-columns:1.1fr 1.6fr .9fr;gap:6px}
-  .m-col{display:flex;flex-direction:column;gap:5px}
-  .m-p{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:6px 8px;position:relative}
-  .m-p small{color:var(--tx3);display:block;font-size:10.5px}
-  .pin{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#c0392b;color:#fff;font-size:10.5px;font-weight:700;margin-right:4px;flex-shrink:0;vertical-align:middle}
-  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:4px 16px;font-size:13px;margin-top:8px}
+  footer{max-width:980px;margin:0 auto;text-align:center;font-size:12px;color:var(--tx3);padding:0 16px 30px}
 
-  .card{background:var(--panel2);border:1px solid var(--line);border-left:4px solid #7a9fcc;border-radius:7px;padding:9px;max-width:430px}
-  .card .row{display:flex;gap:5px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
-  .f{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:2px 6px;font-size:11px;color:var(--tx2)}
-  .hrs{background:var(--inset);border-radius:5px;padding:6px 8px;font-size:11px}
-  .hrs div{display:flex;gap:6px;align-items:center;margin:2px 0}
-  .hrs .kk{width:82px}
-  .hrs .v{background:var(--panel);border:1px solid var(--line2);border-radius:3px;width:44px;text-align:right;padding:0 4px}
-  .hrs .m{font-size:9.5px;font-weight:700;background:var(--chip);border-radius:3px;padding:0 5px;color:var(--tx3)}
-
-  .cmpbar{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:5px 0}
-  .chip{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:4px}
-  .c-over{color:#9a3828;background:#fef0ec} .c-warn{color:#9e7040;background:#f5edd8}
-  .c-eq{color:#7a6a58;background:var(--chip)} .c-under{color:#3d6b4a;background:#dff0e4}
-  .yel{background:#fff4cc;border:1px solid #e0cf8a;border-radius:3px;padding:0 5px}
-
-  footer{text-align:center;font-size:12px;color:var(--tx3);padding:0 24px 30px}
-
-  @media (max-width:900px){
-    .wrap{grid-template-columns:1fr}
-    nav{position:static;max-height:none}
+  @media (max-width:860px){
+    .steps{grid-template-columns:1fr 1fr}
+    .steps li::after{display:none}
+    .must{grid-template-columns:1fr}
     .m-grid{grid-template-columns:1fr}
-    section{padding:18px 16px}
   }
+  @media (max-width:520px){
+    .steps{grid-template-columns:1fr}
+    header h1{font-size:19px}
+  }
+  /* 인쇄는 테마와 무관하게 항상 밝게 */
   @media print{
-    nav{display:none}.wrap{display:block;padding:0}
-    section{break-inside:avoid-page;border:1px solid #bbb}
+    :root, :root[data-theme="light"], :root[data-theme="dark"]{
+      color-scheme:light;
+      --tx:#000; --tx2:#333; --tx3:#666; --bg:#fff; --panel:#fff; --panel2:#fff; --inset:#f6f6f6; --chip:#f0f0f0;
+      --line:#bbb; --line2:#aaa; --am-bg:#fff; --ok-bg:#fff; --info-bg:#fff; --yel-bg:#fff4cc; --yel-line:#e0cf8a;
+    }
     body{background:#fff}
+    .jump,.ref-tools{display:none}
+    section,details,.case{break-inside:avoid-page}
   }
 </style>
 </head>
 <body>
 
 <header><div class="in">
-  <h1>협력업체 요율산정 계산기 — 사용설명서</h1>
-  <p>처음 쓰는 분을 위한 안내 · 2026년 법정 기준 버전(요율산정_대시보드_v2) 기준</p>
+  <h1>📖 요율산정 계산기 사용설명서</h1>
+  <p>외주 용역의 월 청구금액을 법정 기준으로 계산하는 도구 · <b>처음이면 ①만 보세요 (3분)</b></p>
+  <nav class="jump" aria-label="바로가기">
+    <a href="#start">① 3분 시작</a>
+    <a href="#must">② 꼭 알아둘 것</a>
+    <a href="#cases">③ 이럴 땐 이렇게</a>
+    <a href="#ref">④ 참고 자료</a>
+  </nav>
 </div></header>
-
-<div class="wrap">
-<nav>
-  <b>시작하기</b>
-  <a href="#about">이 도구는 무엇인가</a>
-  <a href="#quick">5분 빠른 시작</a>
-  <a href="#layout">화면 구성</a>
-  <b>핵심 기능</b>
-  <a href="#work">1. 업무 카드 입력</a>
-  <a href="#wage">2. 직종 단가표</a>
-  <a href="#pct">3. 기준시급 × 적용률</a>
-  <a href="#shift">4. 근무표 직접 만들기</a>
-  <a href="#common">5. 공통 설정</a>
-  <a href="#result">6. 결과 읽기</a>
-  <a href="#sim">7. 인상률 시뮬레이션</a>
-  <a href="#cmp">8. 산정안 비교</a>
-  <a href="#excel">9. 엑셀 다운로드</a>
-  <a href="#save">10. 저장 · 불러오기</a>
-  <b>참고</b>
-  <a href="#etc">기타 기능</a>
-  <a href="#faq">자주 묻는 질문 · 주의</a>
-</nav>
 
 <main>
 
-<!-- ============ ABOUT ============ -->
-<section id="about">
-  <h2>이 도구는 무엇인가</h2>
-  <p>경비·미화·시설관리처럼 <b>사람을 파견받는 외주 용역</b>의 월 청구금액을 법정 기준대로 계산하는 도구입니다. 업무별로 근무형태·시급·인원을 넣으면 법정수당, 4대보험, 퇴직충당금, 복리후생비, 관리비까지 붙여 <b>1인 청구단가와 월·연간 총액</b>을 산출하고, 업체가 낸 견적과 나란히 비교해 줍니다.</p>
-  <h3>청구단가는 이렇게 쌓입니다</h3>
-  <div class="flow">
-    <span>① 인건비<br><small>기본급+연장·야간·휴일수당</small></span><i>+</i>
-    <span>② 법정부담금<br><small>①×4대보험·퇴직 요율</small></span><i>+</i>
-    <span>③ 복리후생비<br><small>1인 월 정액</small></span><i>+</i>
-    <span>④ 기타고정비<br><small>월 합계 ÷ 전체 인원</small></span><i>=</i>
-    <span>1인 순비용</span><i>× (1+관리비율)</i>
-    <span class="end">1인 청구단가</span><i>× 인원 =</i>
-    <span class="end">월 소계</span>
-  </div>
-  <p style="font-size:13.5px;color:var(--tx2)">이 순서가 화면의 상세 내역, 엑셀 「산정내역」 시트의 행 순서와 모두 같습니다. 이 그림 하나만 기억하면 어느 화면이든 읽을 수 있습니다.</p>
-  <div class="box info"><b>설치 없음.</b> HTML 파일 하나라 브라우저(크롬·엣지 권장)로 열면 바로 동작합니다. 입력값은 서버로 전송되지 않고 내 브라우저 안에서만 계산됩니다.</div>
-</section>
-
-<!-- ============ QUICK ============ -->
-<section id="quick">
-  <h2>5분 빠른 시작</h2>
-  <p>처음 열면 <b>경비 3명 · 격일제</b> 예시 업무가 하나 들어 있습니다. 이걸 고쳐 가며 익히는 것이 가장 빠릅니다.</p>
+<!-- ============ ① 시작 ============ -->
+<section id="start">
+  <h2><span class="no">1</span>3분 시작</h2>
+  <p class="lead">처음 열면 예시 업무(경비 3명 · 격일제)가 하나 들어 있습니다. 이걸 고치면서 익히는 게 가장 빠릅니다.</p>
   <ol class="steps">
-    <li><b>업무 추가</b> — 왼쪽 「👷 업무 목록」의 <span class="btn a">+ 업무 추가</span>를 누르거나 예시 카드를 고칩니다. 업무명과 <b>교대형태</b>를 고르면 월 근무시간이 자동으로 채워집니다.</li>
-    <li><b>시급·인원·산재율 입력</b> — 단가표가 있으면 「직종」 칸에서 직종을 검색해 고르면 시급이 자동으로 들어갑니다.</li>
-    <li><b>공통 비용 확인</b> — 복리후생비(식대 등)와 기타 고정비, 관리비율을 계약 조건에 맞게 조정합니다. 4대보험 요율은 2026년 기준이 이미 들어 있습니다.</li>
-    <li><b>결과 확인</b> — 가운데 요약 카드와 「업무별 청구 요약」에서 1인 청구단가와 월·연간 총액을 봅니다.</li>
-    <li><b>저장하고 내보내기</b> — <span class="btn b">📂 저장/불러오기</span>로 저장하고, <span class="btn g">📥 엑셀 다운로드</span>로 결재용 파일을 받습니다.</li>
+    <li><b class="t">업무 추가</b><p>왼쪽 「👷 업무 목록」의 <span class="btn a">+ 업무 추가</span>. 교대형태를 고르면 근무시간이 자동으로 채워집니다.</p></li>
+    <li><b class="t">시급 · 인원 입력</b><p>업무 카드에 시급·인원·산재율을 넣습니다. 「직종」을 고르면 시급이 자동으로 들어갑니다.</p></li>
+    <li><b class="t">결과 확인</b><p>가운데 요약 카드와 「업무별 청구 요약」에서 <b>1인 청구단가</b>와 월 총액을 봅니다.</p></li>
+    <li><b class="t">저장 · 내보내기</b><p><span class="btn b">📂 저장/불러오기</span>로 저장하고 <span class="btn g">📥 엑셀 다운로드</span>로 결재 파일을 받습니다.</p></li>
   </ol>
-  <div class="box warn"><b>숫자 입력 팁</b> 업무 카드의 숫자 칸(시급·인원·근무시간 등)은 <b>Enter를 누르거나 다른 칸을 클릭해야</b> 계산에 반영됩니다. 타이핑 도중에 합계가 바뀌지 않는 것은 정상입니다.</div>
-</section>
 
-<!-- ============ LAYOUT ============ -->
-<section id="layout">
-  <h2>화면 구성</h2>
-  <div class="mock">
+  <div class="mock" aria-label="대시보드 화면 도식">
     <div class="m-hd"><b style="font-size:13px">협력업체 요율산정 계산기</b>
-      <div class="bs"><span class="pin">A</span><span>📥 엑셀</span><span>결과 복사</span><span>📂 저장/불러오기</span><span>초기화</span><span>기본·화이트·다크</span></div></div>
-    <div class="m-tab"><span class="pin">B</span><span class="on">① 요율 산정</span><span>② 산정안 비교</span></div>
+      <div class="bs"><span class="pin">4</span><span>📖 사용 설명서</span><span>📥 엑셀</span><span>결과 복사</span><span>📂 저장/불러오기</span><span>초기화</span><span>테마</span></div></div>
+    <div class="m-tab"><span class="on">① 요율 산정</span><span>② 산정안 비교</span></div>
     <div class="m-grid">
-      <div class="m-col">
-        <div class="m-p"><span class="pin">C</span><b>입력 영역</b><small>산정 정보 · 직종 단가표 · 업무 목록 · 법정 비율 · 복리후생비 · 기타고정비/관리비율</small></div>
+      <div class="m-p"><div class="h"><span class="pin">1</span><span class="pin">2</span>입력</div><small>업무 목록 · 직종 단가표 · 공통 설정</small></div>
+      <div class="m-p"><div class="h"><span class="pin">3</span>결과</div><small>요약 카드 · 인상률 시뮬레이션 · 업무별 청구 요약</small></div>
+      <div class="m-p"><div class="h">차트</div><small>비용 구성 · 업무별 금액</small></div>
+    </div>
+    <div class="cap">번호는 위 단계와 같습니다 — 입력은 왼쪽, 결과는 가운데</div>
+  </div>
+
+  <div class="box tip"><b>공통 조건은 한 번만 확인하세요.</b> 왼쪽 아래의 복리후생비·기타 고정비·관리비율은 모든 업무에 똑같이 적용됩니다. 4대보험 요율은 2026년 기준이 이미 들어 있습니다.</div>
+</section>
+
+<!-- ============ ② 꼭 알아둘 것 ============ -->
+<section id="must">
+  <h2><span class="no">2</span>꼭 알아둘 3가지</h2>
+  <p class="lead">자주 하는 실수입니다. 숫자가 이상하면 여기부터 보세요.</p>
+  <div class="must">
+    <div class="mk"><div class="ic">⏎</div><b class="t">숫자는 Enter로 확정</b>
+      <p>업무 카드의 숫자 칸은 <b>Enter</b>나 다른 칸을 클릭해야 계산에 반영됩니다. 입력하는 동안 합계가 그대로인 건 정상입니다.</p></div>
+    <div class="mk"><div class="ic">⏱</div><b class="t">기본급 대상 = 전체 시간</b>
+      <p>연장·야간·휴일이 <b>포함된</b> 월 유급시간입니다. 아래 칸은 가산분(+0.5배)만 더하므로 빼지 마세요.</p>
+      <div class="tree" aria-label="근무시간 칸 예시 (격일제)">
+        <div><span class="n">기본급 대상</span><span class="v">209h</span><span class="m">×1.0</span></div>
+        <div><span class="n">&nbsp;├ 연장</span><span class="v">120h</span><span class="m">+0.5</span></div>
+        <div><span class="n">&nbsp;├ 야간</span><span class="v">60h</span><span class="m">+0.5</span></div>
+        <div><span class="n">&nbsp;└ 휴일근로</span><span class="v">0h</span><span class="m">+0.5</span></div>
+      </div></div>
+    <div class="mk"><div class="ic">💾</div><b class="t">저장은 이 브라우저에만</b>
+      <p>다른 PC로 옮기거나 백업하려면 저장 창의 <b>JSON 내보내기</b>를 쓰세요. 브라우저 방문 기록을 지우면 저장 목록도 사라집니다.</p></div>
+  </div>
+</section>
+
+<!-- ============ ③ 이럴 땐 이렇게 ============ -->
+<section id="cases">
+  <h2><span class="no">3</span>이럴 땐 이렇게</h2>
+  <p class="lead">하고 싶은 일을 찾아 📍 위치의 버튼을 누르세요.</p>
+  <div class="cases">
+
+    <article class="case">
+      <h3>업체 견적과 비교하고 싶어요</h3>
+      <span class="where">📍 ② 산정안 비교 탭</span>
+      <ol>
+        <li><span class="yel">노란 칸</span>에 업체의 1인 청구단가와 인원을 넣습니다.</li>
+        <li>월·연간 차이와 과다 항목이 바로 나옵니다.</li>
+        <li>어디가 부풀었는지 보려면 <span class="k">▼ 상세</span>에서 항목별로 넣습니다.</li>
+      </ol>
+      <p class="note">업체 금액이 부가세 포함이면 「부가세 포함 비교」를 켜세요.</p>
+      <a class="more" href="#ref-cmp">판정 기준 · 결과 읽는 법 →</a>
+    </article>
+
+    <article class="case">
+      <h3>시급을 몇 % 올리면 얼마 늘까요?</h3>
+      <span class="where">📍 가운데 「📈 인상률 시뮬레이션」 펼치기</span>
+      <ol>
+        <li>인상률을 넣으면 현재 / 인상 후 / 증감이 나옵니다. 미리보기라 입력값은 그대로입니다.</li>
+        <li>확정하려면 <span class="btn a">✓ 입력값에 실제 반영</span>.</li>
+      </ol>
+      <p class="note">반영 전에 저장하세요. +10% 반영 후 −10%를 해도 원래 값으로 돌아오지 않습니다.</p>
+      <a class="more" href="#ref-sim">칸별 의미 →</a>
+    </article>
+
+    <article class="case">
+      <h3>표준 교대에 없는 근무예요</h3>
+      <span class="where">📍 업무 카드 「🗓 근무표 직접 만들기」</span>
+      <ol>
+        <li>반복 주기(1~6주)를 고릅니다.</li>
+        <li>색 칩(주간·야간·휴무 등)을 달력 칸에 끌어다 놓습니다.</li>
+        <li><span class="btn g">✓ 적용하기</span> — 월평균 근무시간으로 자동 환산됩니다.</li>
+      </ol>
+      <a class="more" href="#ref-shift">자동 판정 규칙 · 편집 요령 →</a>
+    </article>
+
+    <article class="case">
+      <h3>"노임단가의 85%" 같은 계약이에요</h3>
+      <span class="where">📍 업무 카드 시급 옆 「기준×%」</span>
+      <ol>
+        <li>기준시급과 적용률을 넣으면 시급이 자동으로 계산됩니다.</li>
+        <li>화면·엑셀에 「기준 21,509원 × 85%」처럼 근거가 남습니다.</li>
+      </ol>
+      <p class="note">단가표를 새로 바꿔도 적용률(85%)은 그대로 유지됩니다.</p>
+      <a class="more" href="#ref-wage">자세히 →</a>
+    </article>
+
+    <article class="case">
+      <h3>새 단가표로 바꿔야 해요 (반기마다)</h3>
+      <span class="where">📍 「💰 직종 단가표」 → 📥 다른 표 올리기</span>
+      <ol>
+        <li>시중노임단가 엑셀을 올립니다.</li>
+        <li>"시급도 갱신할까요?"에서 확인 → 직종이 지정된 모든 업무의 시급이 한 번에 바뀝니다.</li>
+      </ol>
+      <a class="more" href="#ref-wage">올릴 엑셀 형식 →</a>
+    </article>
+
+    <article class="case">
+      <h3>엑셀에서 숫자를 고치고 싶어요</h3>
+      <span class="where">📍 내려받은 엑셀 파일</span>
+      <ol>
+        <li><span class="yel">노란 칸</span>만 고치면 모든 시트가 다시 계산됩니다.</li>
+        <li>업무·항목 추가처럼 구조를 바꾸는 수정은 도구에서 하고 다시 내보내세요.</li>
+      </ol>
+      <p class="note">「산정내역」 시트의 행은 정렬하지 마세요.</p>
+      <a class="more" href="#ref-excel">시트 구성 · 주의사항 →</a>
+    </article>
+
+  </div>
+</section>
+
+<!-- ============ ④ 참고 자료 ============ -->
+<section id="ref">
+  <div class="ref-head">
+    <div>
+      <h2><span class="no">4</span>참고 자료</h2>
+      <p class="lead" style="margin:0">필요할 때만 펼쳐 보세요. 인쇄하면 모두 펼쳐진 상태로 나옵니다.</p>
+    </div>
+    <div class="ref-tools"><button type="button" id="refToggle">모두 펼치기</button></div>
+  </div>
+
+  <div class="grp">계산 기준</div>
+
+  <details id="ref-calc">
+    <summary>청구단가 계산 구조 <small>검산할 때</small></summary>
+    <div class="body">
+      <div class="flow">
+        <span>① 인건비<br><small>기본급+연장·야간·휴일수당</small></span><i>+</i>
+        <span>② 법정부담금<br><small>①×4대보험·퇴직 요율</small></span><i>+</i>
+        <span>③ 복리후생비<br><small>1인 월 정액</small></span><i>+</i>
+        <span>④ 기타고정비<br><small>월 합계 ÷ 전체 인원</small></span><i>=</i>
+        <span>1인 순비용</span><i>× (1+관리비율)</i>
+        <span class="end">1인 청구단가</span><i>× 인원 =</i>
+        <span class="end">월 소계</span>
       </div>
-      <div class="m-col">
-        <div class="m-p"><span class="pin">D</span><b>요약 카드</b> 인원 · 월 총액 · 연간</div>
-        <div class="m-p"><span class="pin">E</span><b>인상률 시뮬레이션</b> <small>(접힌 상태)</small></div>
-        <div class="m-p"><span class="pin">F</span><b>업무별 청구 요약 / 비용 상세</b></div>
-      </div>
-      <div class="m-col">
-        <div class="m-p"><span class="pin">G</span><b>차트</b><small>비용 구성 · 업무별 금액</small></div>
-      </div>
+      <p>화면의 상세 내역과 엑셀 「산정내역」 시트의 행 순서가 이 순서와 같습니다.</p>
+      <p><b>검산:</b> 상세의 「1인 월 순비용」 × (1+관리비율) = 「1인 최종 청구금액」, 그 값 × 인원 = 소계. 숫자가 이상하면 <a href="#must">근무시간 칸</a>이 포함관계대로 들어갔는지부터 확인하세요.</p>
     </div>
-    <div class="cap">화면 도식 — 실제 화면과 색·크기는 다를 수 있습니다</div>
-  </div>
-  <div class="legend">
-    <div><span class="pin">A</span>내보내기·저장·초기화·색상 테마</div>
-    <div><span class="pin">B</span>탭 전환 — 산정 / 업체안 비교</div>
-    <div><span class="pin">C</span>모든 입력은 왼쪽에서 (위에서 아래로)</div>
-    <div><span class="pin">D</span>입력 즉시 갱신되는 핵심 숫자</div>
-    <div><span class="pin">E</span>계약 갱신 협상용 인상 미리보기</div>
-    <div><span class="pin">F</span>업무별 단가와 산출 근거</div>
-    <div><span class="pin">G</span>보고용 시각 자료</div>
-  </div>
-  <p style="font-size:13px;color:var(--tx2);margin-top:8px">화면 폭이 좁으면(노트북·프로젝터) 오른쪽 차트가 아래로 내려가며 2단·1단으로 바뀝니다.</p>
-</section>
+  </details>
 
-<!-- ============ 1 WORK ============ -->
-<section id="work">
-  <h2><span class="no">1</span>업무 카드 입력 <span class="tag">가장 중요</span></h2>
-  <p>업무 하나 = 카드 하나입니다. 같은 조건(근무형태·시급)으로 일하는 인원 묶음을 한 카드로 만드세요. 예: 「경비 주간 2명」과 「경비 격일 3명」은 카드 두 개.</p>
-
-  <div class="mock" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-    <div class="card">
-      <div class="row"><span class="pin">1</span><span class="f" style="flex:1">경비</span><span class="f">격일제 ▾</span><span style="color:#c06060">✕</span></div>
-      <div class="row"><span class="pin">2</span><span class="f" style="flex:1">직종 검색 — 비우면 직접입력</span></div>
-      <div class="row"><span class="pin">3</span><span class="f">시급 10,320 <u style="color:#9b7050">기준×%</u></span><span class="f">인원 3</span><span class="f">산재율 0.7</span></div>
-      <div class="hrs"><div style="justify-content:space-between"><b>월 근무시간</b><span style="color:#9b7050">📋 산정 근거 · 🗓 근무표 직접 만들기</span></div>
-        <div><span class="pin">4</span>☑ 주휴수당 가산</div>
-        <div><span class="kk">기본급 대상</span><span class="v">209</span>h <span class="m">×1.0</span></div>
-        <div><span class="kk">&nbsp;├ 연장</span><span class="v">120</span>h <span class="m">+0.5</span> <span style="color:#b07020">⚠ 한도 초과</span></div>
-        <div><span class="kk">&nbsp;├ 야간</span><span class="v">60</span>h <span class="m">+0.5</span></div>
-        <div><span class="kk">&nbsp;└ 휴일근로</span><span class="v">0</span>h <span class="m">+0.5</span></div>
-        <div><span class="kk">&nbsp;&nbsp;&nbsp;&nbsp;└ 8h초과</span><span class="v">0</span>h <span class="m">+0.5 더</span></div>
-        <div style="margin-top:3px">☐ 휴일 정액 &nbsp; ☑ 근로시간 적용제외(§63)</div>
-      </div>
+  <details id="ref-hours">
+    <summary>근무시간 칸 · 교대형태별 자동값 <small>경고 배너 포함</small></summary>
+    <div class="body">
+      <h4>칸별 계산</h4>
+      <div class="tbl"><table>
+        <tr><th>칸</th><th>계산</th><th>입력 요령</th></tr>
+        <tr><td>기본급 대상</td><td>시급 × 시간 × 1.0</td><td>주휴 포함 월 유급시간 (주 40h 근무 = 209h)</td></tr>
+        <tr><td>연장</td><td>시급 × 시간 × 0.5</td><td>일 8h·주 40h를 넘는 시간</td></tr>
+        <tr><td>야간</td><td>시급 × 시간 × 0.5</td><td>22:00~06:00에 걸친 시간</td></tr>
+        <tr><td>휴일근로</td><td>시급 × 시간 × 0.5</td><td>휴일에 일한 시간 (연장과 중복 가산하지 않음)</td></tr>
+        <tr><td>└ 8h초과</td><td>시급 × 시간 × 0.5 추가</td><td>휴일 하루 8h를 넘긴 시간 → 합계 100% 가산</td></tr>
+      </table></div>
+      <h4>교대형태별 자동 입력값 (월 기준)</h4>
+      <div class="tbl"><table>
+        <tr><th>교대형태</th><th>근무 방식</th><th>기본급 대상</th><th>연장</th><th>야간</th></tr>
+        <tr><td>주간고정</td><td>월~금 1일 8시간</td><td class="r">209h</td><td class="r">0</td><td class="r">0</td></tr>
+        <tr><td>2교대</td><td>주간조·야간조 12시간 교대</td><td class="r">174h</td><td class="r">52</td><td class="r">78</td></tr>
+        <tr><td>3교대</td><td>06~14 / 14~22 / 22~06 순환</td><td class="r">174h</td><td class="r">0</td><td class="r">58</td></tr>
+        <tr><td>4조3교대</td><td>3개조 근무 + 1개조 휴무 순환</td><td class="r">182h</td><td class="r">8</td><td class="r">61</td></tr>
+        <tr><td>격일제</td><td>24시간 근무 후 24시간 비번</td><td class="r">209h</td><td class="r">120</td><td class="r">60</td></tr>
+        <tr><td>커스텀(달력)</td><td colspan="4">근무표를 직접 그려 환산 (<a href="#ref-shift">근무표 직접 만들기</a>)</td></tr>
+      </table></div>
+      <p>교대형태를 바꾸면 근무시간이 위 표준값으로 다시 채워집니다. 근거는 카드의 <span class="k">📋 산정 근거</span>에서 법 조항과 함께 볼 수 있습니다. 실제 단체협약·근무설계와 다르면 직접 고치세요.</p>
+      <h4>카드의 체크 항목</h4>
+      <ul>
+        <li><b>주휴수당 가산</b> — 켜고 끄면 기본급 대상에서 35h(주 8h의 월 환산)가 더해지거나 빠집니다. 손으로 고친 값 위에서도 정확히 그만큼만 움직입니다.</li>
+        <li><b>휴일 정액</b> — 휴일근로를 0.5 가산 대신 시간당 정액으로 주는 계약일 때 체크하고 단가를 넣습니다.</li>
+        <li><b>근로시간 적용제외(§63)</b> — 고용노동부 감시·단속적 근로 승인을 받은 업무면 체크합니다. 연장 한도 경고가 꺼집니다. 격일제는 기본으로 체크되어 있습니다.</li>
+      </ul>
+      <h4>경고 배너 (계산에는 영향 없음)</h4>
+      <ul>
+        <li><b>빨강</b> — 시급이 2026년 최저시급(10,320원)보다 낮을 때</li>
+        <li><b>노랑</b> — 연장이 월 52h(주 12h 한도)를 넘을 때</li>
+      </ul>
     </div>
-    <div style="flex:1;min-width:230px;font-size:13.5px">
-      <p><span class="pin">1</span><b>업무명 · 교대형태</b> — 교대형태를 바꾸면 아래 근무시간이 표준값으로 다시 채워집니다.</p>
-      <p><span class="pin">2</span><b>직종</b> — 단가표가 있을 때만 보입니다(<a href="#wage">2장</a>).</p>
-      <p><span class="pin">3</span><b>시급 · 인원 · 산재율</b> — 산재율은 업종마다 달라 카드별로 넣습니다.</p>
-      <p><span class="pin">4</span><b>월 근무시간</b> — 자동값 그대로 써도 되고 계약 조건에 맞게 고쳐도 됩니다.</p>
+  </details>
+
+  <details id="ref-rates">
+    <summary>법정 요율 · 공통 설정 기본값 <small>2026년 기준</small></summary>
+    <div class="body">
+      <div class="tbl"><table>
+        <tr><th>항목</th><th>기본값</th><th>계산 방식</th><th>비고</th></tr>
+        <tr><td>국민연금</td><td>4.75%</td><td rowspan="5">급여 합계 × 요율</td><td>2033년까지 매년 0.5%p 인상 예정</td></tr>
+        <tr><td>건강보험</td><td>3.595%</td><td></td></tr>
+        <tr><td>장기요양</td><td>0.4724%</td><td></td></tr>
+        <tr><td>실업급여</td><td>0.9%</td><td></td></tr>
+        <tr><td>고용안정·직업능력개발</td><td>0.25%</td><td>150인 미만 기준 (규모별 0.25~0.85%)</td></tr>
+        <tr><td>산재보험 (기본)</td><td>0.7%</td><td>업무 카드별 산재율 사용</td><td>여기 값은 <b>새 업무의 기본값</b>일 뿐</td></tr>
+        <tr><td>퇴직충당금</td><td>8.33%</td><td>급여 합계 × 요율</td><td>1개월÷12개월. DC형이면 실납입율</td></tr>
+        <tr><td>복리후생비</td><td>식대 200,000원</td><td>체크한 항목 합계 (1인 월)</td><td>교통비·피복비 등은 체크로 켬, <span class="k">+ 추가</span>로 새 항목</td></tr>
+        <tr><td>기타 고정비</td><td>없음</td><td>월 합계 ÷ 전체 인원</td><td>장비 임차료·소모품 등 업체 전체 비용</td></tr>
+        <tr><td>관리비율</td><td>10%</td><td>1인 순비용 × 비율</td><td>업체의 일반관리비+이윤에 해당</td></tr>
+      </table></div>
+      <p>고친 요율은 칸 옆 <span class="k">↺</span>로 기본값에 복원됩니다. 법정 요율이 바뀌는 해에는 이 값부터 확인하세요.</p>
     </div>
-  </div>
+  </details>
 
-  <h3>교대형태별 자동 입력값 (월 기준)</h3>
-  <div class="tbl"><table>
-    <tr><th>교대형태</th><th>근무 방식</th><th>기본급 대상</th><th>연장</th><th>야간</th></tr>
-    <tr><td>주간고정</td><td>월~금 1일 8시간</td><td class="r">209h</td><td class="r">0</td><td class="r">0</td></tr>
-    <tr><td>2교대</td><td>주간조·야간조 12시간 교대</td><td class="r">174h</td><td class="r">52</td><td class="r">78</td></tr>
-    <tr><td>3교대</td><td>06~14 / 14~22 / 22~06 순환</td><td class="r">174h</td><td class="r">0</td><td class="r">58</td></tr>
-    <tr><td>4조3교대</td><td>3개조 근무 + 1개조 휴무 순환</td><td class="r">182h</td><td class="r">8</td><td class="r">61</td></tr>
-    <tr><td>격일제</td><td>24시간 근무 후 24시간 비번</td><td class="r">209h</td><td class="r">120</td><td class="r">60</td></tr>
-    <tr><td>커스텀(달력)</td><td colspan="4">근무표를 직접 그려 환산 (<a href="#shift">4장</a>)</td></tr>
-  </table></div>
-  <p style="font-size:13px;color:var(--tx2)">값의 근거는 카드의 <span class="k">📋 산정 근거</span>를 누르면 표로 볼 수 있습니다. 실제 단체협약·근무설계와 다르면 직접 고치세요.</p>
+  <div class="grp">기능 상세</div>
 
-  <h3>근무시간 칸 읽는 법 — 꼭 알아둘 것</h3>
-  <p>「기본급 대상」은 연장·야간·휴일을 <b>모두 포함한</b> 유급 전체 시간입니다. 그 아래 칸들은 그 시간 중 가산이 붙는 구간이고, <b>가산분(0.5배)만</b> 추가로 더합니다. 트리(├└)와 배수 칩(×1.0 / +0.5)이 이 포함관계를 보여줍니다.</p>
-  <div class="tbl"><table>
-    <tr><th>칸</th><th>계산</th><th>입력 요령</th></tr>
-    <tr><td>기본급 대상</td><td>시급 × 시간 × 1.0</td><td>주휴 포함 월 유급시간 (주 40h 근무 = 209h)</td></tr>
-    <tr><td>연장</td><td>시급 × 시간 × 0.5</td><td>일 8h·주 40h를 넘는 시간</td></tr>
-    <tr><td>야간</td><td>시급 × 시간 × 0.5</td><td>22:00~06:00에 걸친 시간</td></tr>
-    <tr><td>휴일근로</td><td>시급 × 시간 × 0.5</td><td>휴일에 일한 시간 (연장과 중복 가산하지 않음)</td></tr>
-    <tr><td>└ 8h초과</td><td>시급 × 시간 × 0.5 추가</td><td>휴일 하루 8h를 넘긴 시간 → 합계 100% 가산</td></tr>
-  </table></div>
-  <div class="box tip"><b>주휴수당 가산</b> 체크를 켜고 끄면 기본급 대상에서 35h(주 8h의 월 환산)가 더해지거나 빠집니다. 이미 손으로 고친 값 위에서도 정확히 그만큼만 움직입니다.</div>
-  <div class="box warn"><b>경고 표시</b> 시급이 최저시급(10,320원)보다 낮으면 빨간 배너, 연장이 월 52h(주 12h 한도)를 넘으면 노란 배너가 뜹니다. 금액 계산에는 영향이 없는 알림입니다. 격일제 경비처럼 고용노동부 감시·단속적 근로 승인을 받은 업무는 <span class="k">근로시간 적용제외(§63)</span>를 체크하면 연장 경고가 사라집니다.</div>
-</section>
-
-<!-- ============ 2 WAGE ============ -->
-<section id="wage">
-  <h2><span class="no">2</span>직종 단가표</h2>
-  <p>시중노임단가 같은 「직종 → 일급」 표를 불러와, 업무 카드에서 직종을 고르면 시급을 자동으로 채우는 기능입니다. <b>일급 ÷ 8시간 = 시급</b>으로 환산합니다(예: 172,068원 ÷ 8 = 21,509원).</p>
-  <h3>표는 어디서 오나</h3>
-  <ul>
-    <li><b>기본 표</b> — 도구를 사내 웹 주소(GitHub Pages 등)로 열면 함께 둔 <code>단가표.xlsx</code>를 자동으로 읽습니다.</li>
-    <li><b>직접 올린 표</b> — 파일을 PC에서 바로 열었거나 다른 표를 쓰려면 「💰 직종 단가표」 패널의 <span class="btn b">📥 다른 표 올리기</span>로 엑셀을 올립니다. 올린 표가 기본 표보다 우선하며, 브라우저에 기억됩니다.</li>
-    <li>표가 없으면 직종 칸이 숨겨지고 시급을 직접 입력하면 됩니다.</li>
-  </ul>
-  <h3>올릴 엑셀 형식</h3>
-  <p>열 순서나 제목 위치는 자유롭습니다. 앞쪽 10행 안에서 아래 제목을 알아서 찾습니다.</p>
-  <div class="tbl"><table>
-    <tr><th>열</th><th>필수</th><th>인식하는 제목(포함되면 됨)</th></tr>
-    <tr><td>직종명</td><td>필수</td><td>직종 · 직종명 · 업무 · 업무명 · 공종 · 명칭</td></tr>
-    <tr><td>단가</td><td>필수</td><td>일급 · 일당 · 단가 · 노임 · 금액 ("172,068원" 같은 글자도 읽음)</td></tr>
-    <tr><td>단위</td><td>선택</td><td>단위 — 일 / 시간 / 월. 없으면 「일」로 간주 (월 단가는 ÷209h)</td></tr>
-    <tr><td>기준 · 해설 · 산재율</td><td>선택</td><td>기준(적용월), 해설·설명·비고, 산재</td></tr>
-  </table></div>
-  <p style="font-size:13px;color:var(--tx2)">단가가 0·공란·「-」인 행은 자동으로 제외되고, 같은 이름의 직종은 분야·적용월을 괄호로 붙여 구분합니다.</p>
-  <h3>업무 카드에서 쓰기</h3>
-  <ol>
-    <li>직종 칸에 검색어 입력 — 직종명뿐 아니라 <b>해설 내용</b>으로도 찾습니다(예: 「지게차」).</li>
-    <li>목록에서 고르면(↑↓ + Enter 가능) 시급이 채워지고, 표에 산재율이 있으면 산재율도 채워집니다.</li>
-    <li>시급은 계속 고칠 수 있습니다. 고치면 카드 아래 근거 줄이 <b>「✏️ 직접 수정」</b>으로 바뀌고 <span class="k">단가로 되돌리기</span> 링크가 생깁니다.</li>
-  </ol>
-  <div class="box tip"><b>반기 단가 갱신</b> 새 단가표를 올리면 "직종이 지정된 업무의 시급도 갱신할까요?"라고 묻습니다. 확인 한 번으로 모든 업무의 시급이 새 단가로 바뀝니다.</div>
-  <p style="font-size:13px;color:var(--tx2)">단가표는 참조 자료라 <span class="k">초기화</span>로 지워지지 않습니다. 올린 표를 버리려면 패널의 <span class="k">기본 표로 복귀</span>를 누르세요.</p>
-</section>
-
-<!-- ============ 3 PCT ============ -->
-<section id="pct">
-  <h2><span class="no">3</span>기준시급 × 적용률</h2>
-  <p>"노임단가의 85%를 시급으로 한다" 같은 계약 조건을 그대로 기록하는 기능입니다. 금액만 넣으면 나중에 근거를 알 수 없지만, 이 기능을 쓰면 화면·엑셀·복사 결과에 <b>「기준 21,509원 × 85% = 18,283원」</b>처럼 남습니다.</p>
-  <ol>
-    <li>업무 카드의 시급 라벨 옆 <span class="k">기준×%</span>를 누릅니다.</li>
-    <li>「기준시급 × 적용률」 줄이 나타납니다. 켜는 순간에는 기준 = 현재 시급, 율 = 100%라 <b>금액이 바뀌지 않습니다</b>.</li>
-    <li>기준시급이나 적용률을 고치면 시급이 자동으로 다시 계산됩니다.</li>
-    <li>끄려면 그 줄의 <span class="k">끄기</span>. 이때도 금액은 그대로입니다.</li>
-  </ol>
-  <div class="box info"><b>단가표와 함께 쓰면</b> 직종 선택·단가표 교체·인상률 반영이 모두 <b>기준시급 쪽</b>을 바꾸고, 협상으로 정한 적용률(%)은 유지됩니다. 즉 단가표만 갱신하면 "새 단가의 85%"가 자동으로 맞춰집니다.</div>
-</section>
-
-<!-- ============ 4 SHIFT ============ -->
-<section id="shift">
-  <h2><span class="no">4</span>근무표 직접 만들기</h2>
-  <p>표준 교대형태에 맞지 않는 근무(예: 주 4일 12시간, 주말 포함 순환)를 달력에 직접 그려서 <b>월평균 근무시간으로 자동 환산</b>하는 기능입니다. 업무 카드의 <span class="k">🗓 근무표 직접 만들기</span> 또는 교대형태 「커스텀(달력)」을 고르면 열립니다.</p>
-  <div class="mock">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><b>반복 주기</b><span class="f">2주 ▾</span><span class="f">☐ 주휴수당 가산</span><span style="color:var(--tx3)">프리셋:</span><span class="f">주간고정</span><span class="f">2교대</span><span class="f">…</span></div>
-    <div style="display:grid;grid-template-columns:34px repeat(7,1fr);gap:3px;text-align:center;font-size:10.5px">
-      <div></div><b>일</b><b>월</b><b>화</b><b>수</b><b>목</b><b>금</b><b>토</b>
-      <b style="color:#9b7050">1주</b><div style="background:#e8e0d0;border-radius:3px">휴무</div><div style="background:#cfe0f5;border-radius:3px">주간</div><div style="background:#cfe0f5;border-radius:3px;outline:2px solid #4a3828">주간</div><div style="background:#f5e0c0;border-radius:3px">오후</div><div style="background:#f5e0c0;border-radius:3px">오후</div><div style="background:#d8cdf0;border-radius:3px">야간</div><div style="background:#e8e0d0;border-radius:3px">휴무</div>
+  <details id="ref-result">
+    <summary>결과 화면 읽기</summary>
+    <div class="body">
+      <ul>
+        <li><b>요약 카드</b> — 전체 인원 · 월 청구 총액(관리비 포함, 부가세 제외) · 연간 추정(×12).</li>
+        <li><b>업무별 청구 요약</b> — 업무마다 교대형태·인원·시급·<b>1인 청구단가</b>·소계. 업체 견적과 대조할 때 가장 많이 봅니다.</li>
+        <li><b>업무별 비용 상세</b> — 업무 줄을 누르면 인건비·법정부담금 항목별 금액과 산식(예: 120h×0.5), 관리비, 시간당 청구단가까지 펼쳐집니다. 펼친 상태는 입력해도 유지됩니다.</li>
+        <li><b>공통 비용 상세</b> — 복리후생비 구성과 고정비의 1인 배분액(합계 ÷ 인원).</li>
+        <li><b>차트</b> — 비용 7분류 구성비(도넛)와 업무별 월 청구금액(막대). 화면이 좁으면 아래로 내려갑니다.</li>
+      </ul>
     </div>
-    <div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap"><span class="f">⠿ 휴무</span><span class="f">⠿ 주간(08~16)</span><span class="f">⠿ 오후(16~24)</span><span class="f">⠿ 야간(00~08)</span><span class="f">⠿ 24시간(격일)</span><span class="f">시작~종료 ⠿ 직접입력</span></div>
-    <div style="margin-top:6px;font-size:11.5px">기본급 대상 <b>174h</b> · 연장 <b>0h</b> · 야간 <b>…h</b> · 휴일 <b>0h</b> (월평균 환산) &nbsp; <span class="btn g">✓ 적용하기</span></div>
-    <div class="cap">근무표 팝업 도식</div>
-  </div>
-  <ol>
-    <li><b>반복 주기</b>(1~6주)를 정합니다. 그 주기가 계속 반복된다고 보고 월평균을 냅니다.</li>
-    <li>필요하면 <b>프리셋</b>으로 시작점을 불러옵니다.</li>
-    <li>아래 <b>색 칩을 달력 칸으로 끌어다 놓습니다.</b> 여러 칸을 클릭해 선택한 뒤 칩을 누르면 한꺼번에 적용됩니다.</li>
-    <li>이미 채운 칸끼리는 끌어서 옮길 수 있고, <b>Ctrl</b>을 누른 채 놓으면 복사됩니다.</li>
-    <li>표준 블록에 없는 시간은 시작~종료를 고르고 <span class="k">직접입력 적용</span>(22:00~06:00처럼 날을 넘겨도 됨).</li>
-    <li>하단 환산 결과를 확인하고 <span class="btn g">✓ 적용하기</span> — 카드의 근무시간이 채워지고 교대형태가 「커스텀(달력)」이 됩니다.</li>
-  </ol>
-  <div class="box info"><b>자동 판정 규칙</b> 토·일 근무는 휴일근로로, 22~06시는 야간으로, 평일 일 8h·주 40h 초과는 연장으로 계산합니다. 휴일근로는 연장 판정에서 빼서 가산이 중복되지 않습니다. 그린 달력은 업무에 저장되어 다시 열면 그대로 나옵니다.</div>
-</section>
+  </details>
 
-<!-- ============ 5 COMMON ============ -->
-<section id="common">
-  <h2><span class="no">5</span>공통 설정 — 법정 비율 · 복리후생비 · 고정비 · 관리비율</h2>
-  <p>왼쪽 아래 패널들은 <b>모든 업무에 똑같이</b> 적용됩니다.</p>
-  <div class="tbl"><table>
-    <tr><th>항목</th><th>기본값 (2026)</th><th>계산 방식</th><th>비고</th></tr>
-    <tr><td>국민연금</td><td>4.75%</td><td rowspan="5">급여 합계 × 요율</td><td>2033년까지 매년 0.5%p 인상 예정</td></tr>
-    <tr><td>건강보험</td><td>3.595%</td><td></td></tr>
-    <tr><td>장기요양</td><td>0.4724%</td><td></td></tr>
-    <tr><td>실업급여</td><td>0.9%</td><td></td></tr>
-    <tr><td>고용안정·직업능력개발</td><td>0.25%</td><td>150인 미만 기준 (규모별 0.25~0.85%)</td></tr>
-    <tr><td>산재보험 (기본)</td><td>0.7%</td><td>업무 카드별 산재율 사용</td><td>여기 값은 <b>새 업무의 기본값</b>일 뿐</td></tr>
-    <tr><td>퇴직충당금</td><td>8.33%</td><td>급여 합계 × 요율</td><td>1개월÷12개월. DC형이면 실납입율</td></tr>
-    <tr><td>복리후생비</td><td>식대 200,000원</td><td>체크한 항목 합계 (1인 월)</td><td>교통비·피복비 등은 체크로 켬, <span class="k">+ 추가</span>로 새 항목</td></tr>
-    <tr><td>기타 고정비</td><td>없음</td><td>월 합계 ÷ 전체 인원</td><td>장비 임차료·소모품 등 업체 전체 비용</td></tr>
-    <tr><td>관리비율</td><td>10%</td><td>1인 순비용 × 비율</td><td>업체의 일반관리비+이윤에 해당</td></tr>
-  </table></div>
-  <p style="font-size:13px;color:var(--tx2)">요율을 고쳤다가 되돌리려면 각 칸 옆 <span class="k">↺</span>를 누르면 기본값으로 복원됩니다. 법정 요율이 바뀌는 해에는 이 표의 값부터 확인하세요.</p>
-</section>
-
-<!-- ============ 6 RESULT ============ -->
-<section id="result">
-  <h2><span class="no">6</span>결과 읽기</h2>
-  <ul>
-    <li><b>요약 카드</b> — 전체 인원 · 월 청구 총액(관리비 포함, 부가세 제외) · 연간 추정(×12).</li>
-    <li><b>업무별 청구 요약</b> — 업무마다 교대형태·인원·시급·<b>1인 청구단가</b>·소계. 업체 견적과 대조할 때 가장 많이 보는 표입니다.</li>
-    <li><b>업무별 비용 상세</b> — 업무 줄을 누르면 펼쳐지며 ① 인건비 ② 법정부담금 항목별 금액과 괄호 안 산식(예: 120h×0.5), 관리비, <b>시간당 청구단가</b>까지 보여줍니다. 펼친 상태는 입력해도 유지됩니다.</li>
-    <li><b>공통 비용 상세</b> — 복리후생비 구성과 고정비의 1인 배분액(합계 ÷ 인원).</li>
-    <li><b>차트</b> — 비용 7분류 구성비(도넛)와 업무별 월 청구금액(막대).</li>
-  </ul>
-  <div class="box tip"><b>검산 요령</b> 상세의 「1인 월 순비용」 × (1+관리비율) = 「1인 최종 청구금액」, 그 값 × 인원 = 소계입니다. 숫자가 이상하면 근무시간 칸이 포함관계대로 들어갔는지(<a href="#work">1장</a>)부터 보세요.</div>
-</section>
-
-<!-- ============ 7 SIM ============ -->
-<section id="sim">
-  <h2><span class="no">7</span>인상률 시뮬레이션</h2>
-  <p>계약 갱신 협상 때 "시급 3% 올리면 연간 얼마 늘어나나"를 즉석에서 보는 기능입니다. 가운데 「📈 인상률 시뮬레이션」의 <span class="k">펼치기</span>를 누르세요.</p>
-  <div class="tbl"><table>
-    <tr><th>칸</th><th>단위</th><th>의미</th></tr>
-    <tr><td>시급</td><td>%</td><td>모든 업무 시급(휴일 정액단가 포함) 인상률. 4대보험·퇴직·관리비는 자동으로 따라 오름</td></tr>
-    <tr><td>복리후생비 · 기타고정비</td><td>%</td><td>해당 금액의 인상률</td></tr>
-    <tr><td>관리비율</td><td><b>%p</b></td><td>비율 자체를 더하고 뺌 — 10%에 +2를 넣으면 12%</td></tr>
-  </table></div>
-  <p>입력하면 현재 / 인상 후 / 증감(월·연간·%)이 표로 나옵니다. 이것은 <b>미리보기일 뿐</b> 입력값은 바뀌지 않습니다. 마이너스를 넣으면 인하도 시뮬레이션됩니다.</p>
-  <p>확정하려면 <span class="btn a">✓ 입력값에 실제 반영</span> — 시급 등이 원 단위로 반올림되어 실제 칸에 들어가고 인상률 칸은 0으로 돌아갑니다.</p>
-  <div class="box warn"><b>반영 전에 저장하세요.</b> +10% 반영 후 −10%를 반영해도 원래 값으로 돌아오지 않습니다(곱셈이라 비대칭). 원상복구가 필요할 수 있으면 반영 전에 <a href="#save">저장</a>해 두세요.</div>
-</section>
-
-<!-- ============ 8 CMP ============ -->
-<section id="cmp">
-  <h2><span class="no">8</span>산정안 비교 <span class="tag">② 탭</span></h2>
-  <p>업체가 제출한 견적을 내 산정과 업무별·항목별로 대조해 <b>어디서 얼마가 부풀었는지</b> 찾는 기능입니다. 탭 ①에 만든 업무가 자동으로 비교 행이 됩니다.</p>
-
-  <div class="mock">
-    <div class="m-p" style="margin-bottom:5px">🏢 업체명 <span class="f">○○산업</span> &nbsp;☐ 부가세 포함 비교 <span class="f">10</span>% &nbsp;&nbsp;<span style="color:var(--tx3)">전체 간편 · 전체 상세 · 업체값 지우기</span></div>
-    <div class="cmpbar">
-      <div class="m-p">월 청구 차이<br><b style="color:#c86858">+1,240,000원</b></div>
-      <div class="m-p">연간 환산 차이<br><b style="color:#c86858">+14,880,000원</b></div>
-      <div class="m-p">차이율<br><b style="color:#c86858">+8.2%</b></div>
-      <div class="m-p">차이 요인<br><small>단가 +640,000 · 인원 +600,000</small></div>
+  <details id="ref-cmp">
+    <summary>산정안 비교 <small>② 탭</small></summary>
+    <div class="body">
+      <p>탭 ①에 만든 업무가 자동으로 비교 행이 됩니다. 업체값을 넣지 않은 업무는 합계에서 빠지고 상단에 "비교 대상 N/M개 업무"로 표시됩니다.</p>
+      <h4>입력 모드</h4>
+      <ul>
+        <li><b>간편</b>(기본) — 업체 견적서의 1인 청구단가와 인원만 넣고 총액 차이를 봅니다.</li>
+        <li><b>상세</b> — <span class="k">▼ 상세</span>를 눌러 기본급·연장·야간·휴일·4대보험·퇴직·복리후생·고정비·일반관리비·이윤·부가세를 항목별로 넣습니다. 간편값이 있던 상태에서 바꾸면 그 금액이 기본급 칸에 옮겨져 있으니 나눠 넣으세요.</li>
+        <li>상단 <span class="k">전체 간편</span> · <span class="k">전체 상세</span>로 한꺼번에 바꾸고, <span class="k">업체값 지우기</span>로 비웁니다.</li>
+      </ul>
+      <h4>판정 기준 (내 산정 대비 업체)</h4>
+      <p><span class="chip c-over">과다 +15% 이상</span> <span class="chip c-warn">주의 +5% 이상</span> <span class="chip c-eq">동등 ±5% 이내</span> <span class="chip c-under">절감 −5% 이하</span></p>
+      <p>접힌 상태에서도 과다 항목 상위 2개가 <span class="chip c-over">▲ 항목명</span> 칩으로 행 아래에 표시됩니다.</p>
+      <h4>결과 읽는 법</h4>
+      <ul>
+        <li><b>차이 요인</b> — 월 차이 = 단가 효과(1인 단가 차이 × 내 인원) + 인원 효과(인원 차이 × 업체 단가). 단가는 비슷한데 인원만 늘린 견적이 여기서 드러납니다. 업체 인원 칸 옆 <span class="k">↺</span>로 내 인원에 맞춰 볼 수 있습니다.</li>
+        <li><b>관리비</b> — 업체는 보통 일반관리비와 이윤을 나누므로, 그 <b>합계</b>를 내 관리비와 비교합니다.</li>
+        <li><b>부가세</b> — 「부가세 포함 비교」를 켜면 내 산정에도 같은 세율이 붙어 같은 기준으로 비교됩니다. 끄면 공급가액끼리 비교합니다.</li>
+        <li><b>항목별 차이표 · 그래프</b>(하단) — 상세 입력한 업무만 모아 항목별 월 차이를 전체 인원 기준으로 보여줍니다.</li>
+      </ul>
     </div>
-    <div class="m-p" style="font-size:11px">
-      <div style="display:grid;grid-template-columns:1.3fr .6fr .6fr 1fr 1fr 1fr .6fr;gap:4px;color:var(--tx3);font-weight:700"><span>업무명</span><span>내 인원</span><span>업체 인원</span><span>내 1인단가</span><span>업체 1인단가</span><span>월 차이</span><span></span></div>
-      <div style="display:grid;grid-template-columns:1.3fr .6fr .6fr 1fr 1fr 1fr .6fr;gap:4px;align-items:center;margin-top:3px"><span>경비</span><span>3명</span><span class="yel">3</span><span>5,120,000</span><span class="yel">5,540,000</span><span class="chip c-warn">+1,260,000</span><span style="color:#9b7050">▼ 상세</span></div>
-      <div style="padding-left:14px;margin-top:3px"><span class="chip c-over">▲ 일반관리비+이윤 +38.0%</span></div>
+  </details>
+
+  <details id="ref-sim">
+    <summary>인상률 시뮬레이션</summary>
+    <div class="body">
+      <div class="tbl"><table>
+        <tr><th>칸</th><th>단위</th><th>의미</th></tr>
+        <tr><td>시급</td><td>%</td><td>모든 업무 시급(휴일 정액단가 포함) 인상률. 4대보험·퇴직·관리비는 자동으로 따라 오름</td></tr>
+        <tr><td>복리후생비 · 기타고정비</td><td>%</td><td>해당 금액의 인상률</td></tr>
+        <tr><td>관리비율</td><td><b>%p</b></td><td>비율 자체를 더하고 뺌 — 10%에 +2를 넣으면 12%</td></tr>
+      </table></div>
+      <ul>
+        <li>현재 / 인상 후 / 증감(월·연간·%)이 표로 나옵니다. 마이너스를 넣으면 인하도 볼 수 있습니다.</li>
+        <li><span class="btn a">✓ 입력값에 실제 반영</span>을 누르면 시급 등이 원 단위로 반올림되어 실제 칸에 들어가고, 인상률 칸은 0으로 돌아갑니다.</li>
+        <li>곱셈이라 비대칭입니다. +10% 반영 후 −10%를 반영해도 원래 값이 되지 않으니 반영 전에 저장해 두세요.</li>
+      </ul>
     </div>
-    <div class="cap">노란 칸이 업체 견적을 입력하는 곳</div>
-  </div>
+  </details>
 
-  <h3>입력 방법 — 두 가지 모드</h3>
-  <ul>
-    <li><b>간편</b>(기본) — 업체 견적서의 <b>1인 청구단가</b>와 <b>인원</b>만 넣습니다. 총액 차이만 빠르게 봅니다.</li>
-    <li><b>상세</b> — <span class="k">▼ 상세</span>를 눌러 기본급·연장·야간·휴일·4대보험·퇴직·복리후생·고정비·일반관리비·이윤·부가세를 항목별로 넣습니다. 어느 항목이 문제인지 드러납니다. 간편값이 있는 상태에서 상세로 바꾸면 그 금액이 기본급 칸에 옮겨져 있으니 나눠 입력하세요.</li>
-  </ul>
-  <h3>판정 기준 (내 산정 대비 업체)</h3>
-  <p><span class="chip c-over">과다 +15% 이상</span> <span class="chip c-warn">주의 +5% 이상</span> <span class="chip c-eq">동등 ±5% 이내</span> <span class="chip c-under">절감 −5% 이하</span></p>
-  <p>접힌 상태에서도 과다 항목 상위 2개가 <span class="chip c-over">▲ 항목명</span> 칩으로 행 아래에 표시됩니다.</p>
-  <h3>결과 읽기 포인트</h3>
-  <ul>
-    <li><b>차이 요인 분해</b> — 월 차이 = <b>단가 효과</b>(1인 단가 차이 × 내 인원) + <b>인원 효과</b>(인원 차이 × 업체 단가). 단가는 비슷한데 인원만 늘린 견적이 여기서 드러납니다. 인원이 다르면 업체 인원 칸 옆 <span class="k">↺</span>로 내 인원에 맞춰 볼 수 있습니다.</li>
-    <li><b>관리비 대조</b> — 내 산정은 관리비 하나지만 업체는 보통 일반관리비와 이윤을 나눕니다. 그래서 <b>업체의 일반관리비+이윤 합계</b>를 내 관리비와 비교합니다.</li>
-    <li><b>부가세</b> — 업체 견적이 부가세 포함 금액이면 상단 <span class="k">부가세 포함 비교</span>를 켜세요. 내 산정에도 같은 세율이 붙어 같은 기준으로 비교됩니다. 끄면 공급가액끼리 비교합니다.</li>
-    <li><b>항목별 차이표 · 그래프</b>(하단) — 상세 입력한 업무만 모아 항목별로 전체 인원 기준 월 차이를 보여줍니다.</li>
-  </ul>
-  <p style="font-size:13px;color:var(--tx2)">업체값을 입력하지 않은 업무는 합계에서 빠지며, 상단에 "비교 대상 N/M개 업무"로 표시됩니다.</p>
-</section>
+  <details id="ref-shift">
+    <summary>근무표 직접 만들기</summary>
+    <div class="body">
+      <p>업무 카드의 <span class="k">🗓 근무표 직접 만들기</span>를 누르거나 교대형태에서 「커스텀(달력)」을 고르면 열립니다. 주 4일 12시간, 주말 포함 순환처럼 표준에 없는 근무를 월평균 근무시간으로 환산합니다.</p>
+      <h4>편집 요령</h4>
+      <ul>
+        <li><b>프리셋</b>(주간고정·2교대 등)으로 시작점을 불러올 수 있습니다.</li>
+        <li>여러 칸을 클릭해 선택한 뒤 칩을 누르면 한꺼번에 적용됩니다.</li>
+        <li>채운 칸끼리는 끌어서 옮기고, <b>Ctrl</b>을 누른 채 놓으면 복사됩니다.</li>
+        <li>표준 블록에 없는 시간은 시작~종료를 고르고 <span class="k">직접입력 적용</span>. 22:00~06:00처럼 날을 넘겨도 됩니다.</li>
+        <li><span class="btn g">✓ 적용하기</span>를 누르면 카드의 근무시간이 채워지고 교대형태가 「커스텀(달력)」이 됩니다. 그린 달력은 업무에 저장되어 다시 열면 그대로 나옵니다.</li>
+      </ul>
+      <h4>자동 판정 규칙</h4>
+      <p>토·일 근무는 휴일근로, 22~06시는 야간, 평일 일 8h·주 40h 초과는 연장입니다. 휴일근로는 연장 판정에서 빼서 가산이 중복되지 않습니다.</p>
+    </div>
+  </details>
 
-<!-- ============ 9 EXCEL ============ -->
-<section id="excel">
-  <h2><span class="no">9</span>엑셀 다운로드 — 시트 구조와 수정법</h2>
-  <p>헤더의 <span class="btn g">📥 엑셀 다운로드</span>를 누르면 <code>요율산정_업체명_(비교)_날짜.xlsx</code>가 받아집니다. 엑셀 안의 금액은 <b>전부 수식으로 연결</b>되어 있어, 엑셀에서 숫자를 고쳐도 다시 계산됩니다.</p>
-  <h3>시트 구성</h3>
-  <div class="tbl"><table>
-    <tr><th>시트</th><th>용도</th><th>직접 고칠 칸</th></tr>
-    <tr><td><b>공통입력</b></td><td>법정비율·관리비율, 복리후생비(적용 1/0 · 금액), 기타고정비, 부가세</td><td><span class="yel">노란 칸</span> 전부</td></tr>
-    <tr><td><b>요약</b></td><td>A4 세로 1장 결재용 — 핵심 지표, 업무별 요약, 비용 구성비, 적용 요율, 업체 비교 요약</td><td>없음 (다른 시트를 참조)</td></tr>
-    <tr><td><b>산정내역</b></td><td>항목=행, 업무=열의 세부 산출 근거. 인쇄 시 항목명 열이 매 장 반복</td><td>「근무 조건」의 <span class="yel">노란 칸</span> — 시급·인원·근무시간·산재율·휴일 정액</td></tr>
-    <tr><td><b>산정안 비교</b></td><td>업체값을 입력했을 때만 생성. 종합 요약, 업무별·항목별 비교, 업체 상세입력값</td><td>하단 「업체 상세입력값」의 <span class="yel">노란 칸</span></td></tr>
-  </table></div>
-  <h3>엑셀에서 수정하는 법</h3>
-  <ol>
-    <li><b>노란 배경 칸만</b> 고칩니다. 나머지는 수식이므로 덮어쓰면 연결이 끊깁니다.</li>
-    <li>예: 국민연금이 바뀌면 「공통입력」 시트의 국민연금 칸 하나만 고치면 산정내역·요약·비교 시트가 모두 따라 바뀝니다.</li>
-    <li>복리후생비 항목을 켜고 끄려면 「공통입력」의 적용 칸에 <b>1</b>(적용) 또는 <b>0</b>(미적용)을 넣습니다.</li>
-  </ol>
-  <h3>「산정내역」 전체 합계 열 읽는 법</h3>
-  <p>B열 <b>단위</b>가 합계 방식을 정합니다. 1인 금액과 총액을 헷갈리지 않도록 만든 장치입니다.</p>
-  <ul>
-    <li><code>원/인</code> — 1인 금액 → 합계 열은 <b>값 × 인원의 합</b>(총액)</li>
-    <li><code>원</code>·<code>명</code> — 단순 합계</li>
-    <li><code>h</code>·<code>%</code>·<code>원/h</code> — <b>인원 가중평균</b>(회색 글씨)</li>
-  </ul>
-  <div class="box warn"><b>엑셀에서 하면 안 되는 것</b>
-    <br>· 산정내역의 행을 <b>정렬하지 마세요</b> — 행 순서가 곧 산식 순서입니다(필터는 가능).
-    <br>· 업무·복리후생 항목·고정비 항목을 <b>엑셀에서 추가하면 계산에 반영되지 않습니다.</b> 구조가 바뀌는 수정은 도구에서 하고 다시 내보내세요.
-    <br>· 「산정안 비교」의 간편/상세 입력모드는 내보낸 시점으로 고정됩니다.
-    <br>· 「공통입력」의 산재보험 기본값은 신규 업무용이라 엑셀 계산에 쓰이지 않습니다. 산재율은 「산정내역」의 업무별 칸을 고치세요.</div>
-</section>
+  <details id="ref-wage">
+    <summary>직종 단가표 · 기준시급 × 적용률</summary>
+    <div class="body">
+      <p>「직종 → 일급」 표를 불러와 업무 카드에서 직종을 고르면 시급을 채웁니다. <b>일급 ÷ 8시간 = 시급</b> (예: 172,068원 ÷ 8 = 21,509원).</p>
+      <h4>표는 어디서 오나</h4>
+      <ul>
+        <li><b>기본 표</b> — 도구를 사내 웹 주소(GitHub Pages 등)로 열면 함께 둔 <span class="k">단가표.xlsx</span>를 자동으로 읽습니다.</li>
+        <li><b>직접 올린 표</b> — 파일을 PC에서 바로 열었거나 다른 표를 쓰려면 <span class="btn b">📥 다른 표 올리기</span>. 기본 표보다 우선하고 브라우저에 기억됩니다. 버리려면 <span class="k">기본 표로 복귀</span>.</li>
+        <li>표가 없으면 직종 칸이 숨겨지고 시급을 직접 넣으면 됩니다. 단가표는 <span class="k">초기화</span>로 지워지지 않습니다.</li>
+      </ul>
+      <h4>올릴 엑셀 형식</h4>
+      <p>열 순서·제목 위치는 자유입니다. 앞쪽 10행 안에서 아래 제목을 찾습니다.</p>
+      <div class="tbl"><table>
+        <tr><th>열</th><th>필수</th><th>인식하는 제목 (포함되면 됨)</th></tr>
+        <tr><td>직종명</td><td>필수</td><td>직종 · 직종명 · 업무 · 업무명 · 공종 · 명칭</td></tr>
+        <tr><td>단가</td><td>필수</td><td>일급 · 일당 · 단가 · 노임 · 금액 ("172,068원" 같은 글자도 읽음)</td></tr>
+        <tr><td>단위</td><td>선택</td><td>단위 — 일 / 시간 / 월. 없으면 「일」로 간주 (월 단가는 ÷209h)</td></tr>
+        <tr><td>기준 · 해설 · 산재율</td><td>선택</td><td>기준(적용월), 해설·설명·비고, 산재</td></tr>
+      </table></div>
+      <p>단가가 0·공란·「-」인 행은 제외되고, 같은 이름의 직종은 분야·적용월을 괄호로 붙여 구분합니다.</p>
+      <h4>업무 카드에서 쓰기</h4>
+      <ul>
+        <li>직종명뿐 아니라 <b>해설 내용</b>으로도 검색됩니다(예: 「지게차」). ↑↓ + Enter로 고를 수 있습니다.</li>
+        <li>고르면 시급이 채워지고, 표에 산재율이 있으면 산재율도 채워집니다.</li>
+        <li>시급을 고치면 근거 줄이 「✏️ 직접 수정」으로 바뀌고 <span class="k">단가로 되돌리기</span>가 생깁니다.</li>
+      </ul>
+      <h4>기준시급 × 적용률</h4>
+      <ul>
+        <li>시급 옆 <span class="k">기준×%</span>를 켜는 순간 기준 = 현재 시급, 율 = 100%라 금액은 바뀌지 않습니다. <span class="k">끄기</span>를 눌러도 금액은 그대로입니다.</li>
+        <li>직종 선택·단가표 교체·인상률 반영은 모두 <b>기준시급</b>을 바꾸고, 협상으로 정한 적용률은 유지됩니다.</li>
+      </ul>
+    </div>
+  </details>
 
-<!-- ============ 10 SAVE ============ -->
-<section id="save">
-  <h2><span class="no">10</span>저장 · 불러오기</h2>
-  <p>헤더의 <span class="btn b">📂 저장/불러오기</span>를 누릅니다.</p>
-  <ul>
-    <li><b>저장</b> — 이름(기본: 업체명_날짜)을 확인하고 <span class="k">💾 저장</span>. 업무·공통 설정·산정 정보·업체 비교값·<b>당시 쓰던 단가표</b>까지 모두 담깁니다. 최대 30개까지 보관되며, 넘으면 가장 오래된 것부터 지워집니다.</li>
-    <li><b>불러오기</b> — 목록에서 <span class="k">불러오기</span>. 현재 입력은 덮어써집니다. 목록에는 업체명·업무 수·인원·「비교안 ✓」 여부가 표시됩니다.</li>
-    <li><b>JSON 내보내기 / 가져오기</b> — 저장은 <b>이 PC의 이 브라우저</b>에만 남습니다. 다른 PC로 옮기거나, 동료에게 넘기거나, 백업하려면 JSON 파일로 내보내세요.</li>
-  </ul>
-  <div class="box warn"><b>주의</b> 브라우저의 방문 기록·사이트 데이터를 삭제하면 저장 목록도 사라집니다. 중요한 산정안은 JSON으로 따로 보관하세요.</div>
-</section>
+  <div class="grp">엑셀 · 저장</div>
 
-<!-- ============ ETC ============ -->
-<section id="etc">
-  <h2>기타 기능 (간략 소개)</h2>
-  <div class="tbl"><table>
-    <tr><th style="width:170px">기능</th><th>위치</th><th>설명</th></tr>
-    <tr><td>산정 정보</td><td>왼쪽 맨 위 「📄 산정 정보」</td><td>업체명·계약기간·작성자·메모. 계산과 무관하며 화면 상단 요약줄·엑셀 요약 시트·파일명에 기록됩니다.</td></tr>
-    <tr><td>결과 복사</td><td>헤더</td><td>산정 결과(비교값 포함)를 텍스트로 클립보드에 복사 — 메일·메신저 보고용.</td></tr>
-    <tr><td>휴일 정액</td><td>업무 카드 근무시간 아래</td><td>휴일근로를 0.5 가산 대신 시간당 정액으로 주는 계약일 때 체크하고 단가 입력.</td></tr>
-    <tr><td>근로시간 적용제외(§63)</td><td>업무 카드</td><td>감시·단속적 근로 승인 업무의 연장 한도 경고를 끔. 격일제는 기본 체크.</td></tr>
-    <tr><td>경고 배너</td><td>화면 상단</td><td>최저시급 미달(빨강), 연장근로 월 52h 초과(노랑). 계산에는 영향 없음.</td></tr>
-    <tr><td>휴일 산식 정정 안내</td><td>화면 상단(파랑)</td><td>2026-08-28 이전 저장본 중 휴일근로가 있는 것을 열면 표시 — 예전 견적과 금액이 다를 수 있다는 알림.</td></tr>
-    <tr><td>산정 근거</td><td>업무 카드 <span class="k">📋 산정 근거</span></td><td>선택한 교대형태의 시간 산정 근거와 법 조항을 표로 표시.</td></tr>
-    <tr><td>색상 테마</td><td>헤더 오른쪽 끝</td><td>기본(베이지)·화이트·다크. 인쇄와 엑셀은 테마와 무관하게 항상 밝게 출력.</td></tr>
-    <tr><td>초기화</td><td>헤더</td><td>모든 입력을 지우고 예시 업무로 되돌림. 단가표와 저장 목록은 유지.</td></tr>
-    <tr><td>인쇄</td><td>브라우저 인쇄(Ctrl+P)</td><td>현재 탭만 밝은 배경으로 인쇄. 결재용으로는 엑셀 「요약」 시트를 권장.</td></tr>
-  </table></div>
-</section>
+  <details id="ref-excel">
+    <summary>엑셀 파일 구성과 수정 규칙</summary>
+    <div class="body">
+      <p>파일명은 <span class="k">요율산정_업체명_(비교)_날짜.xlsx</span>입니다. 금액은 <b>전부 수식으로 연결</b>되어 있어 엑셀에서 숫자를 고쳐도 다시 계산됩니다.</p>
+      <div class="tbl"><table>
+        <tr><th>시트</th><th>용도</th><th>고칠 칸</th></tr>
+        <tr><td><b>공통입력</b></td><td>법정비율·관리비율, 복리후생비(적용 1/0 · 금액), 기타고정비, 부가세</td><td><span class="yel">노란 칸</span> 전부</td></tr>
+        <tr><td><b>요약</b></td><td>A4 세로 1장 결재용 — 핵심 지표, 업무별 요약, 비용 구성비, 적용 요율, 업체 비교 요약</td><td>없음 (다른 시트 참조)</td></tr>
+        <tr><td><b>산정내역</b></td><td>항목=행, 업무=열의 세부 산출 근거. 인쇄 시 항목명 열이 매 장 반복</td><td>「근무 조건」의 <span class="yel">노란 칸</span> — 시급·인원·근무시간·산재율·휴일 정액</td></tr>
+        <tr><td><b>산정안 비교</b></td><td>업체값을 넣었을 때만 생성. 종합 요약, 업무별·항목별 비교</td><td>하단 「업체 상세입력값」의 <span class="yel">노란 칸</span></td></tr>
+      </table></div>
+      <h4>고치는 법</h4>
+      <ul>
+        <li>예: 국민연금이 바뀌면 「공통입력」의 국민연금 칸 하나만 고치면 모든 시트가 따라 바뀝니다.</li>
+        <li>복리후생비 항목은 「공통입력」의 적용 칸에 <b>1</b>(적용) 또는 <b>0</b>(미적용)을 넣습니다.</li>
+        <li>산재율은 「산정내역」의 업무별 칸을 고치세요. 「공통입력」의 산재보험 기본값은 신규 업무용이라 계산에 쓰이지 않습니다.</li>
+      </ul>
+      <h4>「산정내역」 합계 열 — B열 단위가 합계 방식을 정합니다</h4>
+      <ul>
+        <li><span class="k">원/인</span> 1인 금액 → 값 × 인원의 합(총액)</li>
+        <li><span class="k">원</span> · <span class="k">명</span> 단순 합계</li>
+        <li><span class="k">h</span> · <span class="k">%</span> · <span class="k">원/h</span> 인원 가중평균(회색 글씨)</li>
+      </ul>
+      <div class="box warn"><b>하면 안 되는 것</b>
+        <br>· 노란 칸 외의 칸을 덮어쓰기 — 수식 연결이 끊깁니다.
+        <br>· 「산정내역」 행 정렬 — 행 순서가 곧 산식 순서입니다(필터는 가능).
+        <br>· 엑셀에서 업무·복리후생·고정비 항목 추가 — 계산에 반영되지 않습니다. 도구에서 고치고 다시 내보내세요.
+        <br>· 「산정안 비교」의 간편/상세 모드는 내보낸 시점으로 고정됩니다.</div>
+    </div>
+  </details>
 
-<!-- ============ FAQ ============ -->
-<section id="faq">
-  <h2>자주 묻는 질문 · 주의사항</h2>
-  <h3>숫자를 고쳤는데 합계가 안 바뀌어요</h3>
-  <p>업무 카드의 숫자 칸은 Enter 또는 다른 칸 클릭으로 확정해야 반영됩니다. 엑셀 다운로드·결과 복사·저장은 입력 중인 값도 자동으로 확정한 뒤 실행됩니다.</p>
-  <h3>연장·야간 시간을 기본급 대상에서 빼야 하나요?</h3>
-  <p>아니요. 기본급 대상은 전체 유급시간이고 연장·야간·휴일 칸은 그중 가산분만 더합니다. 빼면 기본급이 과소 계산됩니다.</p>
-  <h3>직종 칸이 안 보여요</h3>
-  <p>단가표가 없는 상태입니다. 파일을 PC에서 바로 열면 기본 표를 자동으로 읽지 못하니, 「💰 직종 단가표」에서 엑셀을 올리세요.</p>
-  <h3>업체 견적과 비교했더니 모든 항목이 약 10% 차이 나요</h3>
-  <p>업체 금액이 부가세 포함인지 확인하세요. 포함이면 <span class="k">부가세 포함 비교</span>를 켜야 같은 기준이 됩니다.</p>
-  <h3>매년 해야 할 일</h3>
-  <ul>
-    <li>최저시급과 4대보험 요율 변경 확인 — 화면의 요율은 직접 수정 가능하지만, 기본값·최저시급 경고 기준을 바꾸려면 도구 관리자가 파일 안의 법정 기준값을 갱신해야 합니다.</li>
-    <li>반기마다 단가표 교체 → 일괄 갱신 확인(<a href="#wage">2장</a>).</li>
-  </ul>
-  <div class="box info"><b>이 도구의 결과는 산정 참고치입니다.</b> 교대 근무시간 기본값은 일반적인 설계를 가정한 값이므로, 실제 계약·단체협약·근무표에 맞게 확인한 뒤 사용하세요.</div>
+  <details id="ref-save">
+    <summary>저장 · 불러오기</summary>
+    <div class="body">
+      <ul>
+        <li><b>저장</b> — 이름(기본: 업체명_날짜)을 확인하고 <span class="k">💾 저장</span>. 업무·공통 설정·산정 정보·업체 비교값·당시 쓰던 단가표까지 담깁니다. 최대 30개, 넘으면 가장 오래된 것부터 지워집니다.</li>
+        <li><b>불러오기</b> — 목록에서 <span class="k">불러오기</span>. 현재 입력은 덮어써집니다. 목록에 업체명·업무 수·인원·「비교안 ✓」가 표시됩니다.</li>
+        <li><b>JSON 내보내기 / 가져오기</b> — 저장은 이 PC의 이 브라우저에만 남습니다. 다른 PC·동료에게 넘기거나 백업할 때 씁니다.</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="grp">기타</div>
+
+  <details id="ref-etc">
+    <summary>그 밖의 기능</summary>
+    <div class="body">
+      <div class="tbl"><table>
+        <tr><th style="width:150px">기능</th><th>위치</th><th>설명</th></tr>
+        <tr><td>산정 정보</td><td>왼쪽 맨 위 「📄 산정 정보」</td><td>업체명·계약기간·작성자·메모. 계산과 무관하며 화면 상단 요약줄·엑셀 요약 시트·파일명에 기록됩니다.</td></tr>
+        <tr><td>결과 복사</td><td>헤더</td><td>산정 결과(비교값 포함)를 텍스트로 복사 — 메일·메신저 보고용.</td></tr>
+        <tr><td>휴일 산식 정정 안내</td><td>화면 상단(파랑)</td><td>2026-08-28 이전 저장본 중 휴일근로가 있는 것을 열면 표시 — 예전 견적과 금액이 다를 수 있다는 알림.</td></tr>
+        <tr><td>색상 테마</td><td>헤더 오른쪽 끝</td><td>기본(베이지)·화이트·다크. 이 설명서도 같은 테마로 열립니다. 인쇄·엑셀은 항상 밝게 출력.</td></tr>
+        <tr><td>초기화</td><td>헤더</td><td>모든 입력을 지우고 예시 업무로 되돌림. 단가표와 저장 목록은 유지.</td></tr>
+        <tr><td>인쇄</td><td>Ctrl+P</td><td>현재 탭만 밝은 배경으로 인쇄. 결재용으로는 엑셀 「요약」 시트를 권장.</td></tr>
+      </table></div>
+    </div>
+  </details>
+
+  <details id="ref-faq">
+    <summary>자주 묻는 질문</summary>
+    <div class="body">
+      <h4>숫자를 고쳤는데 합계가 안 바뀌어요</h4>
+      <p>Enter나 다른 칸 클릭으로 확정해야 반영됩니다. 엑셀 다운로드·결과 복사·저장은 입력 중인 값도 자동으로 확정한 뒤 실행됩니다.</p>
+      <h4>직종 칸이 안 보여요</h4>
+      <p>단가표가 없는 상태입니다. 파일을 PC에서 바로 열면 기본 표를 읽지 못하니 「💰 직종 단가표」에서 엑셀을 올리세요.</p>
+      <h4>업체 견적과 비교했더니 모든 항목이 약 10% 차이 나요</h4>
+      <p>업체 금액이 부가세 포함인지 확인하세요. 포함이면 「부가세 포함 비교」를 켜야 같은 기준이 됩니다.</p>
+      <h4>입력한 데이터가 외부로 전송되나요?</h4>
+      <p>아니요. 설치 없이 브라우저(크롬·엣지 권장)에서 동작하며, 모든 계산은 내 브라우저 안에서만 이루어집니다.</p>
+      <h4>매년 해야 할 일</h4>
+      <ul>
+        <li>최저시급과 4대보험 요율 변경 확인 — 화면의 요율은 직접 고칠 수 있지만, 기본값과 최저시급 경고 기준은 도구 관리자가 파일 안의 법정 기준값을 갱신해야 합니다.</li>
+        <li>반기마다 단가표 교체 → 일괄 갱신 확인.</li>
+      </ul>
+      <div class="box info"><b>결과는 산정 참고치입니다.</b> 교대 근무시간 기본값은 일반적인 설계를 가정한 값이므로 실제 계약·단체협약·근무표에 맞게 확인한 뒤 사용하세요.</div>
+    </div>
+  </details>
 </section>
 
 </main>
-</div>
-<footer>협력업체 요율산정 계산기 사용설명서 · 도구 개정사항이 생기면 이 문서도 함께 갱신하세요</footer>
+<footer>협력업체 요율산정 계산기 사용설명서 · 2026년 법정 기준 · 도구가 바뀌면 이 문서도 함께 갱신하세요</footer>
+
+<script>
+(function () {
+  var refs = Array.prototype.slice.call(document.querySelectorAll('#ref details'));
+  var btn = document.getElementById('refToggle');
+
+  function syncBtn() {
+    btn.textContent = refs.every(function (d) { return d.open; }) ? '모두 접기' : '모두 펼치기';
+  }
+  function openRef(id) {
+    var d = document.getElementById(id);
+    if (d && d.tagName === 'DETAILS') d.open = true;
+  }
+
+  btn.addEventListener('click', function () {
+    var allOpen = refs.every(function (d) { return d.open; });
+    refs.forEach(function (d) { d.open = !allOpen; });
+  });
+  refs.forEach(function (d) { d.addEventListener('toggle', syncBtn); });
+
+  // ③ 카드의 "자세히 →" 링크는 접힌 참고 항목을 펼친 뒤 그 자리로 이동한다
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#ref-"]');
+    if (a) openRef(a.getAttribute('href').slice(1));
+  });
+  if (location.hash.indexOf('#ref-') === 0) openRef(location.hash.slice(1));
+
+  // 인쇄할 때는 접힌 내용도 모두 나오게 하고, 끝나면 원래대로 접는다
+  var openedForPrint = [];
+  window.addEventListener('beforeprint', function () {
+    openedForPrint = refs.filter(function (d) { return !d.open; });
+    openedForPrint.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener('afterprint', function () {
+    openedForPrint.forEach(function (d) { d.open = false; });
+    openedForPrint = [];
+  });
+})();
+</script>
 </body>
 </html>
