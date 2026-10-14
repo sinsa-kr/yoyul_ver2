@@ -92,6 +92,86 @@ section('[3] 근무시간 프리셋 · 캘린더');
   }
   ok('★ 4조3교대 조별 배치 균등 (7/7/7)', cnt.day === 7 && cnt.eve === 7 && cnt.night === 7,
      JSON.stringify(cnt));
+
+  // 3조2교대 — 드롭다운 표준값 · 달력 프리셋 · 근무 순서가 서로 맞는지
+  ok('3조2교대 174/58/58', def.shift32.regular === 174 && def.shift32.overtime === 58 && def.shift32.night === 58,
+     JSON.stringify(def.shift32));
+  ok('3조2교대 드롭다운 항목 존재', !!A.$('wShift_1').querySelector('option[value="shift32"]'));
+  ok('3조2교대 프리셋 버튼 존재', !!A.doc.querySelector(`button[onclick="sbApplyPreset('shift32')"]`));
+
+  win.sbApplyPreset('shift32');
+  const d32 = JSON.parse(win.eval('JSON.stringify(sbDraft)'));
+  const r32 = win.computePatternHours(d32);
+  ok('3조2교대 프리셋 6주 반복', d32.weeks === 6 && d32.days.length === 42, String(d32.weeks));
+  ok('★ 3조2교대 프리셋 환산 = 드롭다운 표준값 (174/58/58, 휴일 0)',
+     r32.hoursRegular === 174 && r32.hoursOvertime === 58 && r32.hoursNight === 58 && r32.holidayHours === 0,
+     JSON.stringify(r32));
+  const D32 = d32.days.filter(d => d && d.start === '08:00').length;
+  const N32 = d32.days.filter(d => d && d.start === '20:00').length;
+  ok('★ 3조2교대 주간·야간 균등 (10/10)', D32 === 10 && N32 === 10, `${D32}/${N32}`);
+  ok('3조2교대 모든 근무가 12시간', d32.days.every(d => !d || win.blockDuration(d.start, d.end) === 12));
+  ok('★ 3조2교대 주말(토·일) 근무 0회',
+     d32.days.every((d, i) => !d || (i % 7 !== 0 && i % 7 !== 6)));
+  // 평일만 이어 읽으면 정확히 주주야야휴휴 × 5 — 주말을 건너뛰어도 순환이 끊기지 않는다
+  const seq = d32.days.filter((_, i) => i % 7 !== 0 && i % 7 !== 6)
+    .map(d => !d ? '휴' : d.start === '08:00' ? '주' : '야').join('');
+  ok('★ 3조2교대 평일 순서 = 주주야야휴휴 × 5', seq === '주주야야휴휴'.repeat(5), seq);
+  // 야간(20~08) 다음날 바로 주간(08~)이 오면 휴식이 0시간 — 반드시 휴무일이 끼어야 한다
+  const badTurn = d32.days.some((d, i) => d && d.start === '20:00' && d32.days[(i + 1) % 42]?.start === '08:00');
+  ok('★ 3조2교대 야간→주간 연속 배치 없음 (휴식 보장)', !badTurn);
+
+  // 드롭다운에서 고르면 표준값이 채워지고, 월 연장 58h > 한도 52h 라 경고가 뜬다
+  win.closeShiftBuilder();
+  A.set('wShift_1', 'shift32'); win.onShiftChange(1);
+  ok('3조2교대 선택 → 174/58/58 자동 입력',
+     A.num('wReg_1') === 174 && A.num('wOT_1') === 58 && A.num('wNt_1') === 58);
+  ok('3조2교대 → 주휴 가산 OFF · 적용제외 OFF (교대제 기본값)',
+     A.$('wRest_1').checked === false && A.$('wExempt_1').checked === false);
+  ok('3조2교대 → 연장근로 한도 경고 표시 (58h > 52h)', A.$('otLimitAlert').style.display === 'block');
+  ok('3조2교대 라벨', win.eval("SHIFT_LABELS.shift32") === '3조2교대');
+
+  // 12h 칩 — 2교대·3조2교대의 주간/야간을 색으로 구분
+  const rgb = hex => { const n = parseInt(hex.slice(1), 16); return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`; };
+  ok('주간 12h · 야간 12h 칩 존재',
+     !!A.doc.querySelector(`button[onclick="sbApplyBlock('day12')"]`) &&
+     !!A.doc.querySelector(`button[onclick="sbApplyBlock('night12')"]`));
+  for (const th of ['warm', 'light', 'dark']) {
+    const b = JSON.parse(win.eval(`JSON.stringify(THEME_PALETTE.${th}.block)`));
+    const vals = [b.day, b.night, b.day12, b.night12, b.eve, b.alt, b.custom, b.off];
+    ok(`★ [${th}] 12h 블록 색이 정의되고 다른 블록과 모두 다름`,
+       !!b.day12 && !!b.night12 && new Set(vals.map(v => v.toLowerCase())).size === vals.length, JSON.stringify(b));
+  }
+  win.sbPaintSwatches();
+  ok('12h 칩 스와치가 팔레트 색으로 칠해짐',
+     A.$('sbSw_day12').style.background === rgb(win.eval('pal().block.day12')) &&
+     A.$('sbSw_night12').style.background === rgb(win.eval('pal().block.night12')),
+     A.$('sbSw_day12').style.background + ' / ' + A.$('sbSw_night12').style.background);
+  // 시각만 같으면 자동 인식 — 칩 도입 전에 저장된 {start,end} 달력도 새 색·라벨로 보인다
+  ok('★ 08~20 / 20~08 → day12 / night12 로 인식',
+     win.sbBlockKey({ start: '08:00', end: '20:00' }) === 'day12' &&
+     win.sbBlockKey({ start: '20:00', end: '08:00' }) === 'night12');
+  ok('12h 칸 라벨', win.sbBlockLabel({ start: '08:00', end: '20:00' }) === '주간 12h' &&
+     win.sbBlockLabel({ start: '20:00', end: '08:00' }) === '야간 12h');
+  ok('기존 8h 블록 인식 그대로', win.sbBlockKey({ start: '08:00', end: '16:00' }) === 'day' &&
+     win.sbBlockKey({ start: '00:00', end: '08:00' }) === 'night');
+
+  // 칩으로 칸에 넣으면 저장값은 {start,end} 만 — 라벨이 저장 데이터에 새지 않는다
+  win.openShiftBuilder(1);
+  win.sbApplyPreset('blank');
+  win.eval('sbSelected = new Set([1, 2])');
+  win.sbApplyBlock('night12');
+  const put = JSON.parse(win.eval('JSON.stringify([sbDraft.days[1], sbDraft.days[2]])'));
+  ok('야간 12h 칩 적용 → {20:00~08:00}, 라벨 미저장',
+     put.every(d => d && d.start === '20:00' && d.end === '08:00' && Object.keys(d).length === 2), JSON.stringify(put));
+
+  // 프리셋 2종이 12h 블록으로 그려지는지 (칸 배경 = 12h 색)
+  for (const [k, nD, nN] of [['shift2', 4, 9], ['shift32', 10, 10]]) {
+    win.sbApplyPreset(k);
+    const cells = [...A.$('sbGrid').querySelectorAll('[ondrop^="sbCellDrop"]')].map(c => c.style.background);
+    const cD = cells.filter(c => c === rgb(win.eval('pal().block.day12'))).length;
+    const cN = cells.filter(c => c === rgb(win.eval('pal().block.night12'))).length;
+    ok(`★ ${k} 프리셋 칸 색 — 주간 12h ${nD}칸 · 야간 12h ${nN}칸`, cD === nD && cN === nN, `${cD}/${cN}`);
+  }
   win.closeShiftBuilder();
 }
 
@@ -174,8 +254,8 @@ section('[3-1] 휴일근로 가산 — 근기법 §56②');
   ok('★ 휴일 정액이면 초과 가산 없음 (정액×시간)', res.wHol === 20000 * 12, String(res.wHol));
   A.check('wHolFlat_1', false);
 
-  // 프리셋 5종은 휴일근로를 쓰지 않으므로 금액이 전혀 바뀌지 않아야 한다
-  for (const k of ['day', 'shift2', 'shift3', 'shift43', 'alternate']) {
+  // 프리셋 6종은 휴일근로를 쓰지 않으므로 금액이 전혀 바뀌지 않아야 한다
+  for (const k of ['day', 'shift2', 'shift32', 'shift3', 'shift43', 'alternate']) {
     A.set('wShift_1', k); win.onShiftChange(1);
     ok(`프리셋 ${k} — 8h초과 0`, A.num('wWkOver_1') === 0);
   }
@@ -232,6 +312,53 @@ section('[4] 경고 — 최저임금 · 연장근로 한도');
   ok('최저임금 미만 → 카드 인라인 경고', A.vis('wWarn_1'));
   A.set('wRate_1', 10320); win.calculate();
   ok('최저임금 이상 → 경고 해제', !A.vis('minWageAlert') && !A.vis('wWarn_1'));
+
+  // ── ✕ 로 닫기 ──
+  ok('두 배너 모두 ✕ 버튼 존재 (인쇄 제외)',
+     ['minWageAlert', 'otLimitAlert'].every(id => {
+       const b = A.$(id).querySelector('.alert-x');
+       return b && b.classList.contains('no-print') && b.getAttribute('onclick') === `dismissAlert('${id}')`;
+     }));
+
+  // 연장근로 한도: 지금 경비(53h)가 걸린 상태
+  ok('닫기 전 — 한도 배너 표시', A.vis('otLimitAlert'));
+  A.$('otLimitAlert').querySelector('.alert-x').click();
+  ok('✕ 클릭 → 한도 배너 숨김', !A.vis('otLimitAlert'));
+  win.calculate();
+  ok('★ 같은 내용이면 재계산해도 계속 숨김', !A.vis('otLimitAlert'));
+  ok('카드 인라인 경고는 그대로 남음', A.vis('wOtWarn_1'));
+
+  // 걸린 업무가 늘어 문구가 바뀌면 다시 뜬다
+  win.addWork({ name: '야간경비', shiftType: 'day', hourlyRate: 10320, headcount: 1,
+                hoursRegular: 209, hoursOvertime: 80, hoursNight: 0, holidayHours: 0, exempt: false });
+  ok('★ 걸린 업무가 바뀌면 다시 표시', A.vis('otLimitAlert') && A.$('otLimitAlertMsg').innerHTML.includes('야간경비'),
+     A.$('otLimitAlertMsg').innerHTML.slice(0, 60));
+
+  // 조건이 풀렸다가 다시 걸리면 다시 뜬다
+  A.$('otLimitAlert').querySelector('.alert-x').click();
+  ok('다시 닫힘', !A.vis('otLimitAlert'));
+  const ids = win.workIdsInOrder();
+  ids.forEach(i => A.set(`wOT_${i}`, 0)); win.calculate();
+  ok('조건 해제 → 숨김', !A.vis('otLimitAlert'));
+  ids.forEach(i => A.set(`wOT_${i}`, 80)); win.calculate();
+  ok('★ 조건이 다시 걸리면 다시 표시 (같은 업무여도)', A.vis('otLimitAlert'));
+
+  // 최저임금 배너도 동일 규칙 + 업무명이 들어간다
+  A.set('wRate_1', 9000); win.calculate();
+  ok('최저임금 배너에 업무명 포함', A.vis('minWageAlert') && A.$('minWageAlertMsg').innerHTML.includes('경비'),
+     A.$('minWageAlertMsg').innerHTML);
+  A.$('minWageAlert').querySelector('.alert-x').click(); win.calculate();
+  ok('최저임금 배너 닫힘 유지', !A.vis('minWageAlert'));
+  ok('최저임금 카드 인라인 경고는 그대로', A.vis('wWarn_1'));
+
+  // 불러오기 · 초기화하면 닫아둔 경고가 다시 보인다
+  const snap = JSON.parse(JSON.stringify(win.collectState()));
+  win.applyState(snap);
+  ok('★ 불러오기 → 닫았던 경고 다시 표시', A.vis('minWageAlert') && A.vis('otLimitAlert'));
+  A.$('minWageAlert').querySelector('.alert-x').click();
+  win.resetAll();
+  A.set('wRate_1', 9000); win.calculate();
+  ok('★ 초기화 후 같은 상황이면 다시 표시', A.vis('minWageAlert'));
 }
 
 // ────────────────────────────────────────────────────────────
