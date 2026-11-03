@@ -1129,6 +1129,115 @@ section('[15] 기타고정비 분리 (T1103-01) — 별도 월 정액 · 관리�
 }
 
 // ────────────────────────────────────────────────────────────
+section('[16] 주휴수당 가산 — 소정근로 비례 (T1103-05, 근기법 §55·§18③)');
+{
+  const A = load();
+  const { win } = A;
+  const hp = p => win.computePatternHours(p, false);
+  const wk = (spec) => { const d = Array(7).fill(null); for (const [i, b] of Object.entries(spec)) d[+i] = b; return d; };
+  const H8 = { start: '09:00', end: '17:00' }, H6 = { start: '09:00', end: '15:00' };
+  const MF = b => wk({ 1: b, 2: b, 3: b, 4: b, 5: b });
+
+  // 헬퍼 — 주 소정근로 ÷ 40 × 8h (최대 8h), 15h 미만 0
+  const wr = win.weeklyRestPerWeek;
+  ok('헬퍼: 40h → 8h · 30h → 6h · 48h → 8h(상한)', wr(40) === 8 && wr(30) === 6 && wr(48) === 8);
+  ok('헬퍼: 15h → 3h · 14.9h → 0 · 0 → 0', wr(15) === 3 && wr(14.9) === 0 && wr(0) === 0);
+  ok('상한 상수 WEEKLY_REST_HOURS = 35 유지', win.eval('WEEKLY_REST_HOURS') === 35);
+  ok('OT_LIMIT_HOURS = 52 유지', win.eval('OT_LIMIT_HOURS') === 52);
+
+  // 캘린더 빌더
+  ok('캘린더 월~금 8h: 174 → 주휴 ON 209 (종전과 동일)',
+     hp({ weeks: 1, days: MF(H8) }).hoursRegular === 174 && hp({ weeks: 1, days: MF(H8), weeklyRest: true }).hoursRegular === 209);
+  ok('★ 캘린더 월~금 6h: 130 → 주휴 ON 156 (+26h)',
+     hp({ weeks: 1, days: MF(H6) }).hoursRegular === 130 && hp({ weeks: 1, days: MF(H6), weeklyRest: true }).hoursRegular === 156,
+     String(hp({ weeks: 1, days: MF(H6), weeklyRest: true }).hoursRegular));
+  const MW = wk({ 1: H6, 3: H6 });   // 주 12h
+  ok('★ 캘린더 월·수 6h(주 12h < 15h): 주휴 ON 가산 0',
+     hp({ weeks: 1, days: MW, weeklyRest: true }).hoursRegular === hp({ weeks: 1, days: MW }).hoursRegular);
+  // 1일 8h 초과분은 소정근로가 아니다 — 월~금 10h 는 주 소정 40h 로 보아 주휴 8h
+  const H10 = { start: '08:00', end: '18:00' };
+  ok('1일 8h 초과분은 소정근로에서 제외 (월~금 10h → 주휴 8h)',
+     hp({ weeks: 1, days: MF(H10), weeklyRest: true }).hoursRegular - hp({ weeks: 1, days: MF(H10) }).hoursRegular === 35);
+  // 휴일(토·일) 근무는 주 소정근로에 넣지 않는다
+  const WE = wk({ 0: H8, 6: H8 });
+  ok('토·일 근무만 있으면 주휴 0', hp({ weeks: 1, days: WE, weeklyRest: true }).hoursRegular === hp({ weeks: 1, days: WE }).hoursRegular);
+  // 반복 주기 평균 — 1주 8h×5(40h) + 1주 휴무 → 평균 20h → 주휴 4h/주
+  const avg = hp({ weeks: 2, days: [...MF(H8), ...Array(7).fill(null)], weeklyRest: true }).hoursRegular;
+  ok('여러 주 패턴은 주 평균 소정근로로 산정 (평균 20h → 주 4h)', avg === Math.round((40 + 8) / 2 * (365 / 7 / 12)), String(avg));
+  ok('격일제 regularHoursPerWeek 오버라이드 유지 (주휴 ON 이어도 209)',
+     hp({ ...JSON.parse(win.eval('JSON.stringify(SHIFT_PATTERNS.alternate)')), weeklyRest: true }).hoursRegular === 209);
+
+  // 회귀 — 프리셋 6종(SHIFT_DEF) · 빌더 프리셋(SHIFT_PATTERNS) 기본 설정 결과가 종전과 같다
+  const DEF = JSON.parse(win.eval('JSON.stringify(SHIFT_DEF)'));
+  const DEF0 = { day: '209/0/0', shift2: '174/52/78', shift32: '174/58/58', shift3: '174/0/58', shift43: '182/8/61', alternate: '209/120/60' };
+  ok('★ SHIFT_DEF 6종 값 불변', Object.entries(DEF0).every(([k, v]) => [DEF[k].regular, DEF[k].overtime, DEF[k].night].join('/') === v),
+     JSON.stringify(Object.fromEntries(Object.entries(DEF).map(([k, v]) => [k, [v.regular, v.overtime, v.night].join('/')]))));
+  const PAT0 = { day: '209/0/0/0/0', day_sep: '209/0/0/0/0', shift2: '169/52/78/13/4', shift2_sep: '156/52/78/13/4',
+    shift32: '174/58/58/0/0', shift32_sep: '174/58/58/0/0', shift3: '174/0/58/0/0', shift3_sep: '174/0/58/0/0',
+    shift43: '183/0/61/9/0', shift43_sep: '174/0/61/9/0', alternate: '209/87/61/70/35', alternate_sep: '209/87/61/70/35' };
+  const bad = [];
+  for (const k of Object.keys(DEF0)) {
+    // 빌더 버튼과 같은 경로(sbApplyPreset → sbDraft)로 패턴을 만든다
+    win.openShiftBuilder(1); win.sbApplyPreset(k);
+    const d = JSON.parse(win.eval('JSON.stringify(sbDraft)'));
+    win.closeShiftBuilder();
+    for (const sep of [false, true]) {
+      const r = win.computePatternHours(d, sep);
+      const got = [r.hoursRegular, r.hoursOvertime, r.hoursNight, r.holidayHours, r.holidayOver].join('/');
+      if (got !== PAT0[k + (sep ? '_sep' : '')]) bad.push(`${k}${sep ? '(분리)' : ''}=${got}`);
+    }
+  }
+  ok('★ SHIFT_PATTERNS 6종 빌더 환산값 불변 (휴일 분리 ON/OFF)', bad.length === 0, bad.join(', '));
+
+  // 업무 목록 체크박스
+  const toggle = (on) => { A.check('wRest_1', on); win.onWeeklyRestToggle(1); return A.num('wReg_1'); };
+  const setReg = v => { A.check('wRest_1', false); A.set('wReg_1', v); };
+  setReg(130);
+  ok('★ 업무 목록 130 → ON 156', toggle(true) === 156, A.$('wReg_1').value);
+  ok('라벨: ON 이면 실제 가산분 표시 (+26h 포함)', A.$('wRestAmt_1').textContent.includes('+26h'), A.$('wRestAmt_1').textContent);
+  ok('★ 업무 목록 156 → OFF 130', toggle(false) === 130, A.$('wReg_1').value);
+  ok('라벨: OFF 면 켤 때 더해질 값 표시 (켜면 +26h)', A.$('wRestAmt_1').textContent.includes('+26h'), A.$('wRestAmt_1').textContent);
+  setReg(174);
+  ok('★ 업무 목록 174 → ON 209 → OFF 174', toggle(true) === 209 && toggle(false) === 174);
+  setReg(50);
+  ok('주 15h 미만 추정(50h) → ON 가산 0', toggle(true) === 50 && toggle(false) === 50);
+  // OFF 상태에서 손으로 고친 임의 값 — 켰다가 끄면 정확히 원복
+  const miss = [];
+  for (let x = 0; x <= 400; x += 0.5) {
+    setReg(x);
+    const on = toggle(true), off = toggle(false);
+    if (off !== x) miss.push(`${x}→${on}→${off}`);
+  }
+  for (const x of [130.3, 65.2, 65.1, 173.75, 0.25, 999.9]) {
+    setReg(x); toggle(true);
+    if (toggle(false) !== x) miss.push(`${x}→${A.$('wReg_1').value}`);
+  }
+  ok('★ OFF 상태 임의 값(0~400h, 0.5 간격 + 소수) ON→OFF 정확히 원복', miss.length === 0, miss.slice(0, 5).join(', '));
+  // ON 상태에서 직접 고친 값은 정확한 역산 해가 없을 수 있다 → OFF 는 reg − k 후보 중 가장 가까운 base 로 근사,
+  // 다시 ON 해도 원래 값과 몇 시간 다를 수 있고, 주 15h 경계 부근(70h)은 차이가 더 크다. 현재 동작을 문서화하는 고정값(R1).
+  const offOn = x => { A.check('wRest_1', true); A.set('wReg_1', x); const off = toggle(false); return [off, toggle(true)]; };
+  const r70 = offOn(70), r81 = offOn(81), r165 = offOn(165);
+  ok('ON 상태 직접 입력 70h → OFF 65 → ON 65 (근사, 15h 경계 — 5h 차이)', r70[0] === 65 && r70[1] === 65, r70.join('→'));
+  ok('ON 상태 직접 입력 81h → OFF 68 → ON 82 (근사)', r81[0] === 68 && r81[1] === 82, r81.join('→'));
+  ok('ON 상태 직접 입력 165h(구버전 +35h 값) → OFF 138 → ON 166 (근사)', r165[0] === 138 && r165[1] === 166, r165.join('→'));
+
+  // 저장본 — 불러올 때 재계산하지 않는다
+  setReg(209); A.check('wRest_1', true); win.calculate();
+  const snap = win.collectState();
+  snap.works[0].hoursRegular = 209; snap.works[0].weeklyRest = true;
+  win.applyState(JSON.parse(JSON.stringify(snap)));
+  const id0 = win.workIdsInOrder()[0];
+  ok('★ 저장본(hoursRegular 209, 주휴 ON) 불러오면 209 그대로', A.num(`wReg_${id0}`) === 209 && A.$(`wRest_${id0}`).checked === true);
+  snap.works[0].hoursRegular = 165;   // 구버전 규칙(+35h)으로 만든 6h 근무 저장본
+  win.applyState(JSON.parse(JSON.stringify(snap)));
+  const id1 = win.workIdsInOrder()[0];
+  ok('구버전 규칙 저장본(165h, 주휴 ON) 불러온 직후 값·체크 유지', A.num(`wReg_${id1}`) === 165 && A.$(`wRest_${id1}`).checked === true);
+
+  ok('문구: 고정 "주 8h, ±35h" 표기 제거', !A.doc.body.innerHTML.includes('±35h') && A.$('wRestRow_' + win.workIdsInOrder()[0]).textContent.includes('소정근로 비례'));
+  ok('스크립트 에러 없음', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
+}
+
+// ────────────────────────────────────────────────────────────
 section('[14] 최종 에러 점검');
 {
   const A = load({ xlsx: XLSX });

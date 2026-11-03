@@ -166,6 +166,12 @@
     · 1인 단가 = 인건비+법정부담금+복리후생비 (+관리비). 증원 시 「1인 단가 × 추가 인원 = 증가액」이 성립
     · 월 총액 = Σ 업무 소계 + 고정비×(1+관리비율) — 수학적으로 종전 총액과 같다. 시간당 단가는 고정비 제외
     · 견적 비교 화면만 업체 관행에 맞춰 고정비를 1인 배분 환산해 비교(숫자는 종전과 동일)
+
+    [2026-11-03 개정] 주휴수당 가산을 소정근로시간에 비례 (근기법 §55·§18③, 시행령 별표2)
+    · 종전엔 근무시간과 무관하게 항상 주 8h(월 35h) — 주 30h 근무자도 +35h 였다
+    · 주휴 = 주 소정근로 ÷ 40 × 8h (최대 8h), 주 15h 미만이면 0 — weeklyRestPerWeek() 한 곳에서 계산
+    · 근무표 빌더: 평일 근무 Σmin(일,8h)·주 최대 40h 의 주 평균으로 산정. 업무 목록: 기본급 대상을 주 소정근로로 추정
+    · 프리셋 6종 값과 저장본 hoursRegular 는 그대로(불러올 때 재계산하지 않음)
   -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -695,7 +701,7 @@
         <option value="4">4주</option><option value="5">5주</option><option value="6">6주</option>
       </select>
       <label style="font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:4px;">
-        <input type="checkbox" id="sbWeeklyRest" onchange="sbRecalc()"> 주휴수당 가산(주 8h)
+        <input type="checkbox" id="sbWeeklyRest" onchange="sbRecalc()"> 주휴수당 가산(소정근로 비례, 최대 주 8h)
       </label>
       <div style="width:1px;height:18px;background:var(--line);"></div>
       <span style="font-size:11px;color:var(--tx2);">프리셋으로 시작:</span>
@@ -1175,12 +1181,22 @@ const SHIFT_BASIS = {
 // 라벨 조회 통일 — SHIFT_DEF 6종 + 캘린더로 직접 만든 'custom' 라벨
 const SHIFT_LABELS = { ...Object.fromEntries(Object.entries(SHIFT_DEF).map(([k, v]) => [k, v.label])), custom: '커스텀(달력)' };
 
-// 주휴수당 가산분(주 8h → 월평균 환산, 반올림) — 주간고정 프리셋의 209−174=35 와 동일한 값
-const WEEKLY_REST_HOURS = Math.round(8 * 365 / 7 / 12);
+// 월평균 주수(365÷7÷12) — 주 단위 시간을 월 시간으로 바꾸는 공통 환산식
+const WEEKS_PER_MONTH = 365 / 7 / 12;
+
+// 주휴시간(h/주) — 근기법 §55·§18③, 시행령 별표2: 주 소정근로 ÷ 40 × 8h (최대 8h).
+// 4주 평균 주 소정근로 15h 미만이면 주휴 없음(0). 근무표 빌더·업무 목록 체크박스가 함께 쓴다.
+function weeklyRestPerWeek(weeklyRegular) {
+  const s = Math.min(Math.max(0, weeklyRegular || 0), 40);
+  return s < 15 ? 0 : s / 40 * 8;
+}
+
+// 주휴 가산분 상한(주 8h → 월평균 환산, 반올림) — 주 40h 근무 시의 값. 주간고정 프리셋의 209−174=35 와 같다.
+const WEEKLY_REST_HOURS = Math.round(8 * WEEKS_PER_MONTH);
 
 // 연장근로 한도(근기법 §53① 주 12h)의 월평균 환산 — WEEKLY_REST_HOURS 와 같은 환산식
 // SHIFT_DEF 대비: 2교대 52h(한도와 동일, 경고 없음) · 4조3교대 8h · 3조2교대 58h(초과) · 격일제 120h(초과)
-const OT_LIMIT_HOURS = Math.round(12 * 365 / 7 / 12);   // = 52h
+const OT_LIMIT_HOURS = Math.round(12 * WEEKS_PER_MONTH);   // = 52h
 
 // ================================================================
 // 근무 시프트 캘린더 빌더 — N주 반복 캘린더를 그리면 월평균 소정/연장/야간/주말로 환산
@@ -1206,8 +1222,9 @@ function nightOverlap(start, end) {
 function computePatternHours(pattern, separateHoliday = false) {
   const { weeks, days, weeklyRest, regularHoursPerWeek } = pattern;
   let regular = 0, night = 0, holiday = 0, holidayOver = 0, overtime = 0;
+  let restBasis = 0;   // 주휴 산정용 주 소정근로 합(주마다 min(Σ min(평일 근무,8), 40))
   for (let w = 0; w < weeks; w++) {
-    let weekDailyExcess = 0, weekTotal = 0;
+    let weekDailyExcess = 0, weekTotal = 0, weekScheduled = 0;
     for (let d = 0; d < 7; d++) {
       const blk = days[w * 7 + d];
       if (!blk) continue;
@@ -1223,6 +1240,7 @@ function computePatternHours(pattern, separateHoliday = false) {
       if (!isHoliday) {
         weekTotal += dur;
         weekDailyExcess += Math.max(0, dur - 8);
+        weekScheduled += Math.min(dur, 8);      // 소정근로는 1일 8h 까지만(넘는 분은 연장)
       }
       // separateHoliday: 휴일 정액 계약이면 휴일근로를 소정근로에서 떼어내 정액이 그 시간의 대가 전액이 되게 한다.
       // 기본(법정 0.5 가산)에서는 기존처럼 소정근로에 포함시켜야 기본급 1.0 + 가산 0.5 = 1.5배가 성립한다.
@@ -1230,12 +1248,14 @@ function computePatternHours(pattern, separateHoliday = false) {
       night += nightOverlap(blk.start, blk.end);
     }
     overtime += Math.max(weekDailyExcess, weekTotal - 40, 0); // 일 8h 초과분과 주 40h 초과분 중 큰 쪽(이중계산 방지)
+    restBasis += Math.min(weekScheduled, 40);
   }
-  if (weeklyRest) regular += 8 * weeks; // 주휴수당 가산(주 8h) — 사용자가 캘린더에서 직접 체크 가능
+  // 주휴수당 가산 — 반복 주기 전체의 주 평균 소정근로에 비례(최대 주 8h, 15h 미만이면 0)
+  if (weeklyRest) regular += weeklyRestPerWeek(restBasis / weeks) * weeks;
   // 프리셋 전용 예외: 실제 캘린더 물리시간과 무관하게 "통상임금 산정기준"(주 48h)을 쓰는 교대(격일제 등).
   // 사용자가 직접 그리는 캘린더에는 이 값이 없으므로 항상 물리 합계가 쓰인다.
   if (regularHoursPerWeek != null) regular = regularHoursPerWeek * weeks;
-  const factor = (365 / 7 / 12) / weeks; // 월평균 주수로 환산
+  const factor = WEEKS_PER_MONTH / weeks; // 월평균 주수로 환산
   return {
     hoursRegular:  Math.round(regular     * factor),
     hoursOvertime: Math.round(overtime    * factor),
@@ -2037,7 +2057,8 @@ function addWork(p, atTop = false) {
         </div>
       </div>
       <label id="wRestRow_${id}" style="display:${p.shiftType==='custom'?'none':'flex'};align-items:center;gap:5px;font-size:10.5px;color:var(--tx-in);margin-bottom:5px;cursor:pointer;">
-        <input type="checkbox" id="wRest_${id}" ${restOn ? 'checked' : ''} onchange="onWeeklyRestToggle(${id})"> 주휴수당 가산(주 8h, 기본급 대상에 ±${WEEKLY_REST_HOURS}h)
+        <input type="checkbox" id="wRest_${id}" ${restOn ? 'checked' : ''} onchange="onWeeklyRestToggle(${id})"> 주휴수당 가산(소정근로 비례, 최대 주 8h · 월 ${WEEKLY_REST_HOURS}h)
+        <span id="wRestAmt_${id}" style="color:var(--tx2);" title="기본급 대상(주휴 제외분)을 주 소정근로로 보고 주 소정근로 ÷ 40 × 8h(최대 8h, 주 15h 미만이면 0)를 월로 환산한 값"></span>
       </label>
       <!-- 연장·야간·휴일은 「기본급 대상」에 이미 포함된 구간이고 여기서는 가산분만 더한다.
            가로 4칸으로는 그 포함관계가 드러나지 않아, 트리 + 배수 칩으로 구조를 보이게 세로로 세운다.
@@ -2378,11 +2399,50 @@ function onHolFlatToggle(id) {
   calculate();
 }
 
-// 기본급 대상 필드(hoursRegular)에 주휴 가산분(±WEEKLY_REST_HOURS)만 가감 — 프리셋 재계산이 아니라
-// 사용자가 이미 손댄 값 위에서도 그대로 델타 적용(껐다 켜면 정확히 원복)
+// 업무 목록의 주휴 가산분(월 h) — 하루 근무시간 입력이 없으므로 「기본급 대상」(주휴 제외분)을
+// 주 소정근로로 보고 추정한다: f(base) = round(주휴(base÷월평균주수) × 월평균주수). 주 40h 이상이면 35h.
+function weeklyRestMonthly(base) {
+  return Math.round(weeklyRestPerWeek(base / WEEKS_PER_MONTH) * WEEKS_PER_MONTH);
+}
+
+// 주휴를 뺀 기본급 대상 — base + f(base) = reg 인 base 를 찾는다.
+// f 는 정수(0~WEEKLY_REST_HOURS)이므로 후보는 reg − k (k = 0..상한) 뿐이고, base + f(base) 가 단조증가라 해는 최대 1개.
+// OFF 상태에서 켜서 만든 값은 항상 정확한 해가 있어 끄면 원래 값으로 돌아온다.
+// ON 상태에서 직접 고친 값·구버전 저장본(종전 +35h 고정)은 정확한 해가 없을 수 있다(예: 70·81·165h).
+// 그때는 reg − k(정수 k) 후보 중 |(base + f(base)) − reg| 가 가장 작은 base 로 근사하고, 같으면 덜 빼는 쪽(k 작은 쪽)을 택한다.
+// 이 근사는 다시 켜도 원래 값과 몇 시간 달라질 수 있고(예: 81→82, 165→166), 주 15h 경계 부근은 더 크다(예: 70→65).
+// 소수 입력은 reg − k 밖의 더 가까운 후보를 보지 않는다.
+// → 기본급 대상을 직접 고칠 때는 주휴를 끈 상태에서 고친 뒤 켜는 것이 정확하다.
+function weeklyRestBase(reg) {
+  const fix = v => +v.toFixed(6);   // reg − k 의 부동소수 잡음 제거(입력 소수 자리 보존)
+  let best = null, bestErr = Infinity;
+  for (let k = 0; k <= WEEKLY_REST_HOURS && k <= reg; k++) {
+    const base = fix(reg - k);
+    const err = Math.abs(weeklyRestMonthly(base) - k);
+    if (err === 0) return base;
+    if (err < bestErr) { best = base; bestErr = err; }
+  }
+  return best ?? Math.max(0, reg);
+}
+
+// 주휴 체크박스 옆에 실제 가감 시간을 보인다 — ON 이면 지금 들어 있는 가산분, OFF 면 켤 때 더해질 값
+function updateWeeklyRestLabel(id) {
+  const el = $(`wRestAmt_${id}`);
+  if (!el) return;
+  const reg = gv(`wReg_${id}`);
+  el.textContent = gc(`wRest_${id}`)
+    ? `+${+(reg - weeklyRestBase(reg)).toFixed(2)}h 포함`
+    : `켜면 +${weeklyRestMonthly(reg)}h`;
+}
+
+// 기본급 대상 필드(hoursRegular)에 주휴 가산분만 가감 — 프리셋 재계산이 아니라
+// 사용자가 이미 손댄 값 위에서도 그대로 적용. OFF→ON→OFF 는 정확히 원복되고,
+// ON 상태에서 직접 고친 값은 끌 때 근사 역산된다(weeklyRestBase 주석 참조).
 function onWeeklyRestToggle(id) {
-  const delta = gc(`wRest_${id}`) ? WEEKLY_REST_HOURS : -WEEKLY_REST_HOURS;
-  $(`wReg_${id}`).value = Math.max(0, gv(`wReg_${id}`) + delta);
+  const reg = gv(`wReg_${id}`);
+  $(`wReg_${id}`).value = gc(`wRest_${id}`)
+    ? +(reg + weeklyRestMonthly(reg)).toFixed(6)
+    : Math.max(0, weeklyRestBase(reg));
   calculate();
 }
 
@@ -2663,6 +2723,7 @@ function collectWorks() {
     const otExempt = gc(`wExempt_${i}`);
     const otWarnEl = $(`wOtWarn_${i}`);
     if (otWarnEl) otWarnEl.style.display = (!otExempt && gv(`wOT_${i}`) > OT_LIMIT_HOURS) ? 'block' : 'none';
+    updateWeeklyRestLabel(i);
     // 8h초과는 휴일근로 시간의 일부다 — 더 크게 적으면 calcOne 이 잘라내므로 그 사실을 알린다
     const holOverWarnEl = $(`wHolOverWarn_${i}`);
     if (holOverWarnEl) holOverWarnEl.style.display = (gv(`wWkOver_${i}`) > gv(`wWk_${i}`)) ? 'inline' : 'none';
