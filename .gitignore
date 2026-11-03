@@ -38,3 +38,8 @@ package-lock.json
 # 자동 승인이 적용돼 권한이 조용히 넓어진다. (.claude/skills 는 공유 대상이라 예외)
 .claude/settings.json
 .claude/settings.local.json
+
+# 에이전트 협업 작업 로그 — 실데이터가 섞일 수 있어 프로토콜·양식만 공유한다.
+.collab/*
+!.collab/PROTOCOL.md
+!.collab/templates/
