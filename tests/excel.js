@@ -52,8 +52,9 @@ function verifyFormulas(wb, label) {
       checked++;
       try {
         const got = evalF(cell.f, name);
+        // 절대오차 — 부동소수 잡음만 허용한다. harness.near 는 상대오차라 0 vs 수백만 원도 통과시켰다.
         const okv = (typeof got === 'number' && typeof cell.v === 'number')
-          ? near(got, cell.v, Math.max(3, Math.abs(cell.v) * 1e-6))
+          ? Math.abs(got - cell.v) <= 1e-6 + 1e-12 * Math.abs(cell.v)
           : String(got) === String(cell.v);
         if (!okv) bad.push(`${name}!${r} f=${cell.f} → ${got} vs .v=${cell.v}`);
       } catch (e) {
@@ -237,6 +238,89 @@ section('[6] 스타일·서식');
   ok('금액 셀에 숫자 서식', !!det[ref(rRate, 2)]?.z, String(det[ref(rRate,2)]?.z));
   ok('산정내역 자동필터', !!det['!autofilter']);
   ok('한글 폰트 지정', JSON.stringify(sm[ref(0, 0)].s).includes('맑은 고딕'));
+}
+
+// ────────────────────────────────────────────────────────────
+section('[7] 기타고정비 분리 (T1103-02) — 별도 월 정액 · 화면과 일치');
+{
+  // 원 단위 절대오차 — harness 의 near 는 상대오차라 0 과 수백만 원도 통과시킬 수 있다
+  const nearWon = (a, b, tol = 1) => typeof a === 'number' && Math.abs(a - b) <= tol;
+  const setup = A => {
+    A.set('wName_1', '경비'); A.set('wHead_1', 3);
+    A.win.addWork({ name: '미화', shiftType: 'day', hourlyRate: 12000, headcount: 2,
+                    hoursRegular: 209, hoursOvertime: 0, hoursNight: 0, holidayHours: 0 });
+    A.win.addFixed(); A.win.addFixed();
+    const ids = [...A.doc.querySelectorAll('[id^="fxAmt_"]')].map(e => e.id.replace('fxAmt_', ''));
+    ids.forEach((i, k) => { A.set(`fxName_${i}`, `고정${k}`); A.set(`fxAmt_${i}`, k ? '120,000' : '330,000'); });
+    A.set('mgmtRate', 10);
+    A.win.calculate();
+    // 비교 입력 — 업무1 간편, 업무2 상세 · 부가세 포함
+    const ws = A.win.workIdsInOrder();
+    A.check('cmpVatOn', true); A.set('cmpVatRate', 10);
+    A.set(`v_unit_${ws[0]}`, '4,000,000'); A.set(`v_head_${ws[0]}`, 3); A.set(`v_vat_${ws[0]}`, '400,000');
+    A.win.toggleCmpMode(ws[1], 'detail');
+    A.set(`v_head_${ws[1]}`, 2);
+    [['base', '2,600,000'], ['ins', '250,000'], ['ret', '210,000'], ['wf', '200,000'],
+     ['fx', '100,000'], ['mgmt', '200,000'], ['profit', '100,000'], ['vat', '366,000']]
+      .forEach(([k, v]) => A.set(`v_${k}_${ws[1]}`, v));
+    A.win.onCmp(); A.win.calculate();
+  };
+  const { A, wb } = grab(setup);
+  const base = A.win.computeAll();
+  const cmp  = A.win.compareAll(base);
+  ok('전제: 고정비 > 0 · 업무 2건 · 비교 입력', base.fxTotal > 0 && base.results.length === 2 && cmp.has);
+
+  // 산정내역
+  const det = wb.Sheets['산정내역'];
+  const CT = 2 + base.results.length;
+  const rFin = findRow(det, '1인 청구단가'), rH = findRow(det, '시간당 단가');
+  ok('순비용 라벨 = ①+②+③', findRow(det, '1인 순비용 (①+②+③)') > 0);
+  ok('★ 1인 청구단가 = 화면 finPer', base.results.every((r, i) => near(det[ref(rFin, 2 + i)].v, r.finPer, 1e-9)));
+  ok('★ 시간당 단가 = 화면 hBill',  base.results.every((r, i) => near(det[ref(rH, 2 + i)].v, r.hBill, 1e-9)));
+  const rFxT = findRow(det, '기타고정비 계'), rFxB = findRow(det, '기타고정비 청구액'), rG = findRow(det, '월 총액');
+  ok('고정비 블록 행 존재', rFxT > 0 && rFxB > rFxT && rG > rFxB, [rFxT, rFxB, rG].join(','));
+  ok('고정비 계 = fxTotal (합계열)', near(det[ref(rFxT, CT)].v, base.fxTotal, 1e-9));
+  ok('★ 고정비 청구액 = fxBill', near(det[ref(rFxB, CT)].v, base.fxBill, 1e-9));
+  ok('★ 월 총액 = grandTot',      near(det[ref(rG, CT)].v, base.grandTot, 1e-9));
+  ok('고정비 행 업무별 열은 비움', [rFxT, rFxB, rG].every(r => det[ref(r, 2)]?.v === '' && !det[ref(r, 2)]?.f));
+  ok('고정비 행은 1인 단가 위에 없음 (산식 순서)', rFxT > findRow(det, '월 소계'));
+
+  // 요약
+  const sm = wb.Sheets['요약'];
+  const rKpi = findRow(sm, '전체 인원 (명)');
+  ok('★ KPI 월 총액 = grandTot', nearWon(sm[ref(rKpi + 1, 2)].v, Math.round(base.grandTot)));
+  const rFx = findRow(sm, '기타고정비 (월 정액 · 관리비 포함)'), rTot = findRow(sm, '전체 합계');
+  ok('요약 고정비 행 존재', rFx > 0 && rFx < rTot);
+  ok('★ 요약 고정비 행 = fxBill', nearWon(sm[ref(rFx, 4)].v, Math.round(base.fxBill)));
+  ok('요약 고정비 행 인원·1인단가 "-"', sm[ref(rFx, 2)].v === '-' && sm[ref(rFx, 3)].v === '-');
+  ok('★ 요약 전체 합계 = grandTot', nearWon(sm[ref(rTot, 4)].v, Math.round(base.grandTot)));
+  const rAggT = findRow(sm, '합계');
+  // 비용 구성은 분류마다 원 단위로 반올림한 뒤 더하므로 분류 수 × 0.5원까지 어긋날 수 있다 (7분류 → 3.5원)
+  const aggTol = A.win.AGG_LBL.length * 0.5;
+  ok('★ 비용 구성 합계 = grandTot', nearWon(sm[ref(rAggT, 3)].v, base.grandTot, aggTol), `${sm[ref(rAggT, 3)].v} vs ${base.grandTot}`);
+  const rAggFx = findRow(sm, '기타고정비');
+  ok('비용 구성 기타고정비 = fxTotal', nearWon(sm[ref(rAggFx, 3)].v, Math.round(base.fxTotal)));
+
+  // 비교
+  const cs = wb.Sheets['산정안 비교'];
+  const rows = cmp.rows.map(x => findRow(cs, x.name));
+  ok('★ 비교 내 1인단가 = 화면', cmp.rows.every((x, i) => nearWon(cs[ref(rows[i], 4)].v, Math.round(x.mineUnit))));
+  ok('★ 비교 내 월소계 = 화면',  cmp.rows.every((x, i) => nearWon(cs[ref(rows[i], 7)].v, Math.round(x.mineTot))));
+  const rCT = findRow(cs, '전체 합계');
+  ok('★ 비교 내 월 합계 = 화면', nearWon(cs[ref(rCT, 7)].v, Math.round(cmp.tot.mineMonthly)));
+  const itemOf = key => cmp.tot.items.find(it => it.key === key);
+  [['기타고정비', 'fx'], ['일반관리비+이윤', 'mgmt'], ['부가세', 'vat']].forEach(([lbl, key]) => {
+    const r = findRow(cs, lbl);
+    ok(`★ 비교 항목 ${lbl} = 화면`, r > 0 && nearWon(cs[ref(r, 1)].v, Math.round(itemOf(key).mine)),
+       r > 0 ? `${cs[ref(r, 1)].v} vs ${itemOf(key).mine}` : 'row 없음');
+  });
+
+  verifyFormulas(wb, '고정비 분리 워크북');
+
+  // 고정비 0 → 요약 고정비 행 생략, 산정내역 청구액 0
+  const z = grab(A => A.win.calculate());
+  ok('고정비 0이면 요약 고정비 행 생략', findRow(z.wb.Sheets['요약'], '기타고정비 (월 정액 · 관리비 포함)') === -1);
+  verifyFormulas(z.wb, '고정비 0 워크북');
 }
 
 T.done();

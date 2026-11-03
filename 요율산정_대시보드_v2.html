@@ -161,6 +161,11 @@
       node tests/smoke.js · tests/excel.js · tests/browserCheck.js
       단가표는 반기마다 교체되므로 브라우저 검사는 특정 직종명을 박지 않고
       로드된 표에서 표본을 골라 검증한다. 교체 후 점검은 tests/realcheck.js.
+
+    [2026-11-03 개정] 기타고정비 분리 — 1인 단가에 배분하지 않고 별도 월 정액(관리비율 적용)으로 청구
+    · 1인 단가 = 인건비+법정부담금+복리후생비 (+관리비). 증원 시 「1인 단가 × 추가 인원 = 증가액」이 성립
+    · 월 총액 = Σ 업무 소계 + 고정비×(1+관리비율) — 수학적으로 종전 총액과 같다. 시간당 단가는 고정비 제외
+    · 견적 비교 화면만 업체 관행에 맞춰 고정비를 1인 배분 환산해 비교(숫자는 종전과 동일)
   -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -885,7 +890,7 @@
     <!-- 기타고정비 + 관리비율 -->
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div class="sec-hdr" style="margin-bottom:0;">💼 기타 고정비 <span style="font-size:10px;font-weight:400;color:var(--tx3);">월 합계 → 전체 인원 배분</span></div>
+        <div class="sec-hdr" style="margin-bottom:0;">💼 기타 고정비 <span style="font-size:10px;font-weight:400;color:var(--tx3);">월 정액 별도 청구 (관리비율 적용)</span></div>
         <button onclick="addFixed()" style="font-size:11px;background:var(--chip2);color:var(--accent);border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:600;">+ 추가</button>
       </div>
       <div id="fixedRows" style="display:flex;flex-direction:column;gap:5px;"></div>
@@ -972,9 +977,11 @@
         <div class="res-row" style="font-weight:700;color:var(--ok-tx);border-bottom:none;padding:5px 8px;"><span>소계 (1인당)</span><span id="r_wf_sub">-</span></div>
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;color:var(--am-tx);background:var(--am-bg);padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid var(--am-line);">기타 고정비 (전체 인원 배분)</div>
+        <div style="font-size:11px;font-weight:700;color:var(--am-tx);background:var(--am-bg);padding:5px 10px;border-radius:5px;margin-bottom:6px;border-left:3px solid var(--am-line);">기타 고정비 (월 정액 · 별도 청구)</div>
         <div id="fx_det" style="padding:0 8px;"></div>
-        <div class="res-row" style="font-weight:700;color:var(--am-tx);border-bottom:none;padding:5px 8px;"><span>소계 (1인 배분)</span><span id="r_fx_sub">-</span></div>
+        <div class="res-row" style="font-weight:700;color:var(--am-tx);border-bottom:none;padding:5px 8px;"><span>소계 (월)</span><span id="r_fx_sub">-</span></div>
+        <div class="res-row" style="padding:5px 8px;"><span style="color:var(--tx);">관리비 <span id="r_fx_mgmt_lbl" style="font-size:11px;color:var(--tx3);"></span></span><span id="r_fx_mgmt" style="font-weight:600;">-</span></div>
+        <div class="res-row" style="font-weight:700;color:var(--am-tx);border-bottom:none;padding:5px 8px;"><span>월 청구액 (관리비 포함)</span><span id="r_fx_bill">-</span></div>
       </div>
     </div>
   </div>
@@ -1005,6 +1012,7 @@
       <input type="number" id="cmpVatRate" value="10" min="0" step="0.5" oninput="onCmp()" class="inp-r" style="width:56px;">
       <span style="font-size:11px;color:var(--tx3);">%</span>
     </div>
+    <span style="font-size:11px;color:var(--tx3);border-left:1px solid var(--line);padding-left:14px;white-space:nowrap;" title="업체 견적은 기타고정비를 1인 단가에 배분해 적어 오므로, 이 화면의 내 단가는 고정비(관리비 포함)를 전체 인원으로 나눠 얹은 값입니다. 모든 업무가 비교 대상이고 부가세를 제외하면 월 합계는 산정 탭과 같습니다(부가세 포함·일부 업무만 비교하면 달라집니다).">ⓘ 고정비 배분 환산 기준</span>
     <div class="no-print" style="margin-left:auto;display:flex;gap:6px;">
       <button onclick="setAllCmpMode('simple')" style="font-size:11px;background:var(--chip2);color:var(--accent);border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:600;">전체 간편</button>
       <button onclick="setAllCmpMode('detail')" style="font-size:11px;background:var(--chip2);color:var(--accent);border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:600;">전체 상세</button>
@@ -1728,7 +1736,9 @@ const WF_ITEMS = [
 const VENDOR_FIELDS = ['base','ot','nt','hol','ins','ret','wf','fx','mgmt','profit','vat'];
 const VENDOR_SUPPLY = VENDOR_FIELDS.filter(k => k !== 'vat'); // 공급가액 구성 (부가세 제외)
 
-// 비교 항목 — mine(r): 내 산정 1인 월 금액 / vk: 대응 업체 필드(복수 합산)
+// 비교 항목 — mine(r, c): 내 산정 1인 월 금액 / vk: 대응 업체 필드(복수 합산)
+//   업체 견적은 기타고정비를 1인 배분해 적어 오므로, 비교에서만 c.fxPer(=fxTotal/totHead)와
+//   그 관리비(c.fxPer × c.mgmtR)를 1인에 얹어 배분 환산 기준으로 맞춘다.
 const CMP_ITEMS = [
   { key:'base', lbl:'기본급',          vk:['base'],           mine:r => r.wBase },
   { key:'ot',   lbl:'연장수당',        vk:['ot'],             mine:r => r.wOT },
@@ -1737,8 +1747,8 @@ const CMP_ITEMS = [
   { key:'ins',  lbl:'4대보험',         vk:['ins'],            mine:r => r.vPen + r.vHlt + r.vLtc + r.vEmp + r.vAcc },
   { key:'ret',  lbl:'퇴직충당금',      vk:['ret'],            mine:r => r.vRet },
   { key:'wf',   lbl:'복리후생비',      vk:['wf'],             mine:r => r.wfTotal },
-  { key:'fx',   lbl:'기타고정비',      vk:['fx'],             mine:r => r.fxPerPerson },
-  { key:'mgmt', lbl:'일반관리비+이윤', vk:['mgmt','profit'],  mine:r => r.mgmt }, // 내 관리비 ↔ 업체 관리비+이윤
+  { key:'fx',   lbl:'기타고정비',      vk:['fx'],             mine:(r, c) => c.fxPer },
+  { key:'mgmt', lbl:'일반관리비+이윤', vk:['mgmt','profit'],  mine:(r, c) => r.mgmt + c.fxPer * c.mgmtR },// 내 관리비 ↔ 업체 관리비+이윤
 ];
 
 // 상세 입력표 행 — cmp:false 는 개별 비교 없이 아래 '관리비+이윤 계'로만 대조
@@ -2768,7 +2778,7 @@ function collectWelfare() {
 // ================================================================
 // CALCULATION ENGINE
 // ================================================================
-function calcOne(w, rates, wfTotal, fxPerPerson, mgmtRate) {
+function calcOne(w, rates, wfTotal, mgmtRate) {
   const hHol   = w.holidayHours;
   // 휴일 정액 계약: 통상임금 0.5 가산 대신 시간당 정액을 지급.
   // 이때 휴일근로 시간은 소정근로와 분리된 것으로 보고 정액이 그 시간의 대가 전액이 된다
@@ -2795,13 +2805,14 @@ function calcOne(w, rates, wfTotal, fxPerPerson, mgmtRate) {
   const vAcc   = wSub * w.accidentRate;
   const lSub   = vRet + vPen + vHlt + vLtc + vEmp + vAcc;
 
-  const netPer = wSub + lSub + wfTotal + fxPerPerson;
+  // 기타고정비는 1인 단가에 넣지 않는다 — computeAll 에서 월 정액(fxBill)으로 따로 더한다.
+  const netPer = wSub + lSub + wfTotal;
   const mgmt   = netPer * mgmtRate;
   const finPer = netPer + mgmt;
   const sub    = finPer * w.headcount;
   const hBill  = w.hoursRegular > 0 ? finPer / w.hoursRegular : 0;
 
-  return { ...w, hHol, hHolOver, wBase, wOT, wNt, wHol, wSub, vRet, vPen, vHlt, vLtc, vEmp1, vEmp2, vEmp, vAcc, lSub, wfTotal, fxPerPerson, netPer, mgmt, finPer, sub, hBill };
+  return { ...w, hHol, hHolOver, wBase, wOT, wNt, wHol, wSub, vRet, vPen, vHlt, vLtc, vEmp1, vEmp2, vEmp, vAcc, lSub, wfTotal, netPer, mgmt, finPer, sub, hBill };
 }
 
 // 입력 수집 → 계산까지 한 번에 (calculate / copyResult / exportExcel 공용)
@@ -2826,25 +2837,34 @@ function computeAll(adj) {
     mgmtR    = (gv('mgmtRate') + (adj.mgmt || 0)) / 100;   // 관리비율만 %p 가감
   }
   const totHead = works.reduce((s, w) => s + w.headcount, 0);
+  // fxPer(1인 배분액)는 견적 비교 전용 — 업체 견적이 고정비를 1인 배분해 적어 오기 때문.
   const fxPer   = totHead > 0 ? fxTotal / totHead : 0;
-  const results  = works.map(w => calcOne(w, rates, wfTotal, fxPer, mgmtR));
-  const grandTot = results.reduce((s, r) => s + r.sub, 0);
+  // 기타고정비 = 별도 월 정액. 관리비율을 적용해 청구한다. 인원이 없으면 0 (빈 화면 총액 0 유지).
+  const fxMgmt  = totHead > 0 ? fxTotal * mgmtR : 0;
+  const fxBill  = totHead > 0 ? fxTotal + fxMgmt : 0;
+  const results  = works.map(w => calcOne(w, rates, wfTotal, mgmtR));
+  const grandTot = results.reduce((s, r) => s + r.sub, 0) + fxBill;
   // welfare/fixed 는 화면 입력 원본 그대로. 인상 적용된 값이 필요하면 wfTotal/fxTotal 을 쓴다.
-  return { works, welfare, fixed, wfTotal, fxTotal, mgmtR, rates, totHead, fxPer, results, grandTot };
+  return { works, welfare, fixed, wfTotal, fxTotal, mgmtR, rates, totHead, fxPer, fxMgmt, fxBill, results, grandTot };
 }
 
 // 비용 7분류 집계 — 화면 도넛차트 / 엑셀 요약시트 공용 (전체 인원 기준 월 금액)
 // Σ aggCost === grandTot (반올림 오차 범위)
-function aggCost(results) {
-  return results.reduce((a, r) => ({
+// base = computeAll() 결과. 기타고정비는 업무에 속하지 않으므로 월 정액(fxTotal)과 그 관리비(fxMgmt)를 따로 얹는다.
+function aggCost(base) {
+  const { results } = base;
+  const fxOn = base.totHead > 0;
+  const a = results.reduce((a, r) => ({
     wBase: a.wBase + r.wBase * r.headcount,
     wAlw:  a.wAlw  + (r.wOT + r.wNt + r.wHol) * r.headcount,
     vRet:  a.vRet  + r.vRet  * r.headcount,
     ins:   a.ins   + (r.vPen + r.vHlt + r.vLtc + r.vEmp + r.vAcc) * r.headcount,
     wf:    a.wf    + r.wfTotal * r.headcount,
-    fx:    a.fx    + r.fxPerPerson * r.headcount,
     mgmt:  a.mgmt  + r.mgmt  * r.headcount,
-  }), { wBase:0, wAlw:0, vRet:0, ins:0, wf:0, fx:0, mgmt:0 });
+  }), { wBase:0, wAlw:0, vRet:0, ins:0, wf:0, mgmt:0 });
+  a.fx    = fxOn ? base.fxTotal : 0;
+  a.mgmt += base.fxMgmt || 0;
+  return a;
 }
 
 // 라벨·순서 단일 출처 — 도넛/범례/엑셀이 모두 이걸 참조.
@@ -2889,7 +2909,7 @@ function clearAlertDismiss() { for (const k in alertDismissed) delete alertDismi
 
 function calculate() {
   const base = computeAll();
-  const { works, welfare, fixed, rates, totHead, fxPer, results, grandTot } = base;
+  const { works, welfare, fixed, rates, totHead, results, grandTot } = base;
 
   const lowWage = works.filter(w => w.hourlyRate > 0 && w.hourlyRate < MIN_WAGE);
   setAlert('minWageAlert', lowWage.length
@@ -2903,7 +2923,7 @@ function calculate() {
       + `감시·단속적 근로로 고용노동부 승인을 받은 업무라면 업무 카드의 <b>「근로시간 적용제외(§63)」</b>를 체크하세요.`
     : '');
 
-  const agg = aggCost(results);
+  const agg = aggCost(base);
 
   // Summary cards
   $('s_head').textContent    = totHead || '-';
@@ -2911,13 +2931,13 @@ function calculate() {
   $('s_annual').textContent  = grandTot > 0 ? fmtn(grandTot * 12) : '-';
 
   // Work table
-  renderWorkTable(results, totHead, grandTot);
+  renderWorkTable(results, totHead, grandTot, base.fxBill);
 
   // Per-work accordion detail
   renderAccordion(results, rates);
 
   // Common detail
-  renderCommon(welfare, fixed, fxPer, totHead);
+  renderCommon(welfare, fixed, base);
 
   // Charts
   renderCharts(agg, results);
@@ -3049,7 +3069,7 @@ function applyRaise() {
 // ================================================================
 // RENDER: WORK TABLE
 // ================================================================
-function renderWorkTable(results, totHead, grandTot) {
+function renderWorkTable(results, totHead, grandTot, fxBill) {
   const tbody = $('workResultTbl');
   if (!results.length) {
     tbody.innerHTML = '<div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px;">업무를 추가해주세요</div>';
@@ -3071,7 +3091,17 @@ function renderWorkTable(results, totHead, grandTot) {
         <span style="text-align:right;font-weight:600;color:var(--accent);">${fmt(r.finPer)}</span>
         <span style="text-align:right;font-weight:700;color:var(--ok);">${fmt(r.sub)}</span>
       </div>`;
-  }).join('');
+  }).join('')
+  // 기타고정비 — 업무에 속하지 않는 월 정액. 인원·1인 단가 칸은 의미가 없어 '-'.
+  + (fxBill > 0 ? `
+      <div id="workFxRow" style="display:grid;grid-template-columns:1fr 72px 44px 86px 96px 106px;font-size:12px;padding:8px;border-bottom:1px solid var(--line-row);align-items:center;background:var(--am-bg);">
+        <span style="font-weight:600;color:var(--am-tx);">기타고정비 <span style="font-size:10px;font-weight:400;color:var(--tx3);">(월 정액 · 관리비 포함)</span></span>
+        <span style="text-align:center;color:var(--tx3);">-</span>
+        <span style="text-align:center;color:var(--tx3);">-</span>
+        <span style="text-align:right;color:var(--tx3);">-</span>
+        <span style="text-align:right;color:var(--tx3);">-</span>
+        <span style="text-align:right;font-weight:700;color:var(--ok);">${fmt(fxBill)}</span>
+      </div>` : '');
   $('r_tot_head').textContent = `${totHead}명`;
   $('r_grand').textContent = fmt(grandTot);
 }
@@ -3128,7 +3158,6 @@ function renderAccordion(results, rates) {
           </div>
           <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;">
             <div class="res-row"><span style="color:var(--tx);">복리후생비 (공통)</span><span style="font-weight:600;">${fmt(r.wfTotal)}</span></div>
-            <div class="res-row"><span style="color:var(--tx);">기타고정비 (1인 배분)</span><span style="font-weight:600;">${fmt(r.fxPerPerson)}</span></div>
             <div class="res-row"><span style="font-weight:700;">1인 월 순비용</span><span style="font-weight:700;">${fmt(r.netPer)}</span></div>
             <div class="res-row"><span style="color:var(--tx);">관리비 (${gv('mgmtRate')}%)</span><span style="font-weight:600;">${fmt(r.mgmt)}</span></div>
             <div style="display:flex;justify-content:space-between;background:var(--accent);color:white;padding:8px 10px;border-radius:6px;margin-top:6px;">
@@ -3151,16 +3180,21 @@ function renderAccordion(results, rates) {
 // ================================================================
 // RENDER: COMMON DETAIL
 // ================================================================
-function renderCommon(welfare, fixed, fxPer, totHead) {
+function renderCommon(welfare, fixed, base) {
+  const { fxTotal, fxMgmt, fxBill, mgmtR, totHead } = base;
   $('wf_det').innerHTML = welfare.details.length
     ? welfare.details.map(w => `<div class="res-row"><span style="color:var(--tx);">${w.lbl}</span><span style="font-weight:600;">${fmt(w.amt)}</span></div>`).join('')
     : '<div style="font-size:12px;color:var(--tx3);padding:4px 8px;">선택된 항목 없음</div>';
   $('r_wf_sub').textContent = fmt(welfare.total);
 
   $('fx_det').innerHTML = fixed.details.length
-    ? fixed.details.map(f => `<div class="res-row"><span style="color:var(--tx);">${esc(f.name)} <span style="font-size:11px;color:var(--tx3);">(합계 ${fmtn(f.amt)}원 ÷ ${totHead}명)</span></span><span style="font-weight:600;">${fmt(totHead > 0 ? f.amt / totHead : 0)}</span></div>`).join('')
+    ? fixed.details.map(f => `<div class="res-row"><span style="color:var(--tx);">${esc(f.name)}</span><span style="font-weight:600;">${fmt(f.amt)}</span></div>`).join('')
     : '<div style="font-size:12px;color:var(--tx3);padding:4px 8px;">입력된 항목 없음</div>';
-  $('r_fx_sub').textContent = fmt(fxPer);
+  // 인원이 없으면 청구액이 0 이므로 합계도 0 으로 맞춘다 (fxBill 과 일관)
+  $('r_fx_sub').textContent  = fmt(totHead > 0 ? fxTotal : 0);
+  $('r_fx_mgmt_lbl').textContent = `(${Math.round(mgmtR * 10000) / 100}%)`;
+  $('r_fx_mgmt').textContent = fmt(fxMgmt);
+  $('r_fx_bill').textContent = fmt(fxBill);
 }
 
 // ================================================================
@@ -3243,27 +3277,31 @@ function mkDiff(key, lbl, mine, ven) {
 // ── 계산 ────────────────────────────────────────────────
 function compareAll(base) {
   const vatOn = gc('cmpVatOn'), vatRate = gv('cmpVatRate') / 100;
+  // 고정비 배분 환산 기준 — 업체 견적과 같은 잣대로 맞추기 위해 비교에서만 1인에 얹는다
+  const c = { fxPer: base.fxPer, mgmtR: base.mgmtR };
+  const fxUnit = c.fxPer * (1 + c.mgmtR);
 
   const rows = base.results.map(r => {
     const id = r.id, mode = cmpMode(id);
     const vHead = Math.max(0, Math.round(gv(`v_head_${id}`)));
 
-    const mineUnit = r.finPer + (vatOn ? r.finPer * vatRate : 0);
+    const mineSup  = r.finPer + fxUnit;                 // 비교용 내 1인 공급가 (배분 환산)
+    const mineUnit = mineSup + (vatOn ? mineSup * vatRate : 0);
     const vSupply  = vendorUnit(id, mode);
     const vUnit    = vSupply + (vatOn ? gv(`v_vat_${id}`) : 0);
     const mineTot  = mineUnit * r.headcount;
     const vTot     = vUnit * vHead;
 
-    const items = CMP_ITEMS.map(it => mkDiff(it.key, it.lbl, it.mine(r),
+    const items = CMP_ITEMS.map(it => mkDiff(it.key, it.lbl, it.mine(r, c),
       mode === 'detail' ? it.vk.reduce((s, k) => s + gv(`v_${k}_${id}`), 0) : NaN));
-    if (vatOn) items.push(mkDiff('vat', '부가세', r.finPer * vatRate,
+    if (vatOn) items.push(mkDiff('vat', '부가세', mineSup * vatRate,
       mode === 'detail' ? gv(`v_vat_${id}`) : NaN));
 
     return {
       id, name: r.name || `업무 ${id}`, shiftLbl: SHIFT_LABELS[r.shiftType] || '',
       mode, mineHead: r.headcount, vHead, headDiff: vHead - r.headcount,
-      mineSupply: r.finPer, vSupply, mineMgmt: r.mgmt,
-      mineVat: r.finPer * vatRate,
+      mineSupply: mineSup, vSupply, mineMgmt: r.mgmt + c.fxPer * c.mgmtR,
+      mineVat: mineSup * vatRate,
       mineUnit, vUnit, ...diffOf(mineUnit, vUnit, 'unit'),
       mineTot, vTot,   ...diffOf(mineTot,  vTot,  'tot'),
       // 월 차이 = 단가 효과 + 인원 효과 (항등식)
@@ -3704,6 +3742,7 @@ function copyResult() {
       + (r.rateMode === 'pct' ? ` | 기준 ${fmtn(r.baseRate)}원 × ${r.ratePct}% = ${fmtn(r.hourlyRate)}원` : '')
       + ` | 산재 ${(r.accidentRate*100).toFixed(2)}% | 1인 청구단가 ${fmt(r.finPer)} | 소계 ${fmt(r.sub)}`),
     '',
+    ...(base.fxBill > 0 ? [`[기타고정비]  월 정액 ${fmt(base.fxTotal)} + 관리비 ${fmt(base.fxMgmt)} = 월 청구 ${fmt(base.fxBill)}`] : []),
     `[전체 합계]  ${totHead}명 | 월 ${fmt(grandTot)} | 연간 ${fmt(grandTot*12)}`,
   ];
 
@@ -4010,7 +4049,7 @@ function buildCommonInputSheet(base) {
     `SUMPRODUCT(B${CIN.wf[0]+1}:B${CIN.wf[CIN.wf.length-1]+1},C${CIN.wf[0]+1}:C${CIN.wf[CIN.wf.length-1]+1})`);
   X.push(); X.h(X.rows - 1, 6);
 
-  X.band('기타고정비 — 동적 항목', NC, S.secAmber, 20);
+  X.band('기타고정비 — 월 정액 · 별도 청구 (관리비율 적용, 1인 단가에 넣지 않음)', NC, S.secAmber, 20);
   r = X.push(['항목명', '월 금액(원)', '']);
   X.stR(r, 0, 2, S.colHdrSm); X.h(r, 20);
   CIN.fixed = [];
@@ -4084,7 +4123,7 @@ function exportExcel() {
 
 // ── ① 요약 시트 — A4 세로 1장 (결재·보고용) ────────────────
 function buildSummarySheet(base, cmp, cin, det, cmpRef) {
-  const { results, totHead, grandTot } = base;
+  const { results, totHead, grandTot, fxBill } = base;
   const X = sheetCtx(), NC = 6, R = v => Math.round(v);
   const compact = results.length > 6;              // 업무가 많으면 1장 유지를 위해 압축
   const RH = compact ? 15 : 17;
@@ -4130,7 +4169,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   results.forEach((w, i) => {
     const e = i % 2;
     r = X.push([w.name || `업무 ${w.id}`, SHIFT_LABELS[w.shiftType] || w.shiftType,
-                w.headcount, R(w.finPer), R(w.sub), grandTot > 0 ? w.sub / grandTot : 0]);
+                w.headcount, R(w.finPer), R(w.sub), R(grandTot) > 0 ? R(w.sub) / R(grandTot) : 0]);
     workRows.push(r);
     X.st(r,0, e?S.dataTxt1:S.dataTxt0);
     X.st(r,1, e?S.dataTxt1:S.dataTxt0);
@@ -4141,6 +4180,20 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
     X.h(r, RH);
   });
   if (!results.length) { r = X.push(['(업무 없음)','','','','','']); X.stR(r,0,NC-1,S.dataTxt0); }
+  // 기타고정비 — 업무에 속하지 않는 월 정액(관리비 포함). 인원·1인 단가는 의미가 없어 '-'. 0이면 행 생략.
+  let fxRow = -1;
+  if (fxBill > 0) {
+    const e = results.length % 2;
+    r = X.push(['기타고정비 (월 정액 · 관리비 포함)', '—', '-', '-', R(fxBill), R(grandTot) > 0 ? R(fxBill) / R(grandTot) : 0]);
+    fxRow = r;
+    X.st(r,0, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,1, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,2, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,3, e?S.dataTxt1:S.dataTxt0);
+    X.st(r,4, e?S.subNum1:S.subNum0,   WON);
+    X.st(r,5, e?S.pctNum1:S.pctNum0,   RATIO);
+    X.h(r, RH);
+  }
   r = X.push(['전체 합계','—', totHead, totHead > 0 ? R(grandTot/totHead) : 0, R(grandTot), results.length ? 1 : 0]);
   const totalRow = r;
   X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
@@ -4151,12 +4204,14 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   X.band('비용 구성 비율 — 전체 인원 · 월 청구액 기준', NC, S.secBlue, 20);
   r = X.push(['분류','','','월 금액 (원)','','비중']);
   X.mg(r,0,r,2); X.mg(r,3,r,4); X.stR(r, 0, NC-1, S.colHdrSm); X.h(r, 22);
-  const agg = aggCost(results);
-  const aggTot = AGG_LBL.reduce((s, x) => s + agg[x[0]], 0);
+  const agg = aggCost(base);
+  // 수식 경로와 같게 — 합계 = 분류별 ROUND 값의 SUM, 비중 = 반올림 금액 ÷ 그 합계, 비중 합계 = 비중의 SUM
+  const aggTot = AGG_LBL.reduce((s, x) => s + R(agg[x[0]]), 0);
+  const aggShare = key => aggTot > 0 ? R(agg[key]) / aggTot : 0;
   const aggRows = [];
   AGG_LBL.forEach(([key, lbl], i) => {
     const e = i % 2;
-    r = X.push([lbl, '', '', R(agg[key]), '', aggTot > 0 ? agg[key] / aggTot : 0]);
+    r = X.push([lbl, '', '', R(agg[key]), '', aggShare(key)]);
     aggRows.push(r);
     X.mg(r,0,r,2); X.mg(r,3,r,4);
     X.stR(r,0,2, e?S.dataTxt1:S.dataTxt0);
@@ -4164,7 +4219,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
     X.st(r,5,    e?S.pctNum1:S.pctNum0,   RATIO);
     X.h(r, RH);
   });
-  r = X.push(['합계','','', R(aggTot), '', aggTot > 0 ? 1 : 0]);
+  r = X.push(['합계','','', aggTot, '', AGG_LBL.reduce((s, x) => s + aggShare(x[0]), 0)]);
   const aggTotalRow = r;
   X.mg(r,0,r,2); X.mg(r,3,r,4);
   X.stR(r,0,2,S.totTxt); X.stR(r,3,4,S.totNum,WON); X.st(r,5,S.totNum,RATIO);
@@ -4188,8 +4243,8 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
   // ── 수식 오버레이 — 산정내역·공통입력 시트를 참조 (업무 0건이면 참조할 대상이 없으므로 생략) ──
   if (det) {
     X.fx(kpiValRow, 0, D(det.head, det.CT));
-    X.fx(kpiValRow, 2, `ROUND(${D(det.sub, det.CT)},0)`);
-    X.fx(kpiValRow, 4, `ROUND(${D(det.sub, det.CT)}*12,0)`);
+    X.fx(kpiValRow, 2, `ROUND(${D(det.grand, det.CT)},0)`);
+    X.fx(kpiValRow, 4, `ROUND(${D(det.grand, det.CT)}*12,0)`);
 
     workRows.forEach((rr, i) => {
       const c = det.C0 + i;
@@ -4198,9 +4253,14 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
       X.fx(rr, 4, `ROUND(${D(det.sub, c)},0)`);
       X.fx(rr, 5, `IF(${colL(4)}${totalRow+1}>0,${colL(4)}${rr+1}/${colL(4)}${totalRow+1},0)`);
     });
+    if (fxRow >= 0) {
+      X.fx(fxRow, 4, `ROUND(${D(det.fxBill, det.CT)},0)`);
+      X.fx(fxRow, 5, `IF(${colL(4)}${totalRow+1}>0,${colL(4)}${fxRow+1}/${colL(4)}${totalRow+1},0)`);
+    }
     X.fx(totalRow, 2, D(det.head, det.CT));
-    X.fx(totalRow, 3, `ROUND(${D(det.sub, det.CT)}/${D(det.head, det.CT)},0)`);
-    X.fx(totalRow, 4, `ROUND(${D(det.sub, det.CT)},0)`);
+    // 1인 평균 = 월 총액(고정비 청구액 포함) ÷ 전체 인원 — 리터럴(grandTot/totHead)과 같은 정의
+    X.fx(totalRow, 3, `ROUND(${D(det.grand, det.CT)}/${D(det.head, det.CT)},0)`);
+    X.fx(totalRow, 4, `ROUND(${D(det.grand, det.CT)},0)`);
     // 비중 합계(col5)는 원래도 "업무가 있으면 무조건 1"(grandTot=0이어도)이라 개별 행 비중의 합과
     // 정의가 다르다 — SUM 수식으로 얹으면 grandTot=0일 때 0이 되어 기존 표시(1)와 어긋나므로 그대로 리터럴 유지.
 
@@ -4210,8 +4270,8 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
       vRet:  () => D(det.vRet, det.CT),
       ins:   () => `${D(det.lSub,det.CT)}-${D(det.vRet,det.CT)}`,
       wf:    () => D(det.wfSub, det.CT),
-      fx:    () => D(det.fxSub, det.CT),
-      mgmt:  () => D(det.mgmt, det.CT),
+      fx:    () => D(det.fxTot, det.CT),                              // 고정비 월 합계
+      mgmt:  () => `${D(det.mgmt,det.CT)}+${D(det.fxMgmt,det.CT)}`,   // 업무 관리비 + 고정비 관리비
     };
     AGG_LBL.forEach(([key], i) => {
       const rr = aggRows[i];
@@ -4232,6 +4292,8 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
 
     const myAvg = t.mineHead > 0 ? t.mineMonthly / t.mineHead : 0;
     const vAvg  = t.vHead    > 0 ? t.vMonthly    / t.vHead    : 0;
+    // 캐시값은 '산정안 비교' 종합요약 셀(수식이 참조하는 값)과 같게 — 비교 시트가 없으면 종전 값
+    const SRV = cmpRef?.SRV;
     const DS = { over:S.diffOver, warn:S.diffWarn, under:S.diffUnder, eq:S.diffEq };
     const DC = { over:S.diffOverC, warn:S.diffWarnC, under:S.diffUnderC, eq:S.diffEqC };
     const judgeFx = (mineRef, diffRef) =>
@@ -4246,7 +4308,12 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
       ['월 청구 총액 (원)',R(t.mineMonthly),    R(t.vMonthly),    WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }, 'monthly'],
       ['연간 환산 (원)',   R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  { level:t.monthlyLevel, ratio:t.monthlyRatio }, 'annual'],
     ].forEach(([lbl, mine, ven, z, grand, d, key]) => {
-      r = X.push([lbl, mine, ven, ven - mine, d.ratio ?? '', CMP_LBL[d.level]]);
+      if (SRV) {                                // 수식 경로: B·C=비교시트값, D=C-B, E=IF(B>0,D/B,""), F=판정(B,D)
+        ({ mine, ven } = SRV[key]);
+        r = X.push([lbl, mine, ven, ven - mine, mine > 0 ? (ven - mine) / mine : '', CMP_LBL[levelOf(ven - mine, mine)]]);
+      } else {
+        r = X.push([lbl, mine, ven, ven - mine, d.ratio ?? '', CMP_LBL[d.level]]);
+      }
       CR[key] = r;
       if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
       else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
@@ -4257,6 +4324,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
     [['차이 요인 · 단가 효과 (원)', t.priceEffect, '(업체단가 − 내단가) × 내인원', 'price'],
      ['차이 요인 · 인원 효과 (원)', t.headEffect,  '(업체인원 − 내인원) × 업체단가', 'headEff']]
     .forEach(([lbl, val, note, key]) => {
+      if (SRV) val = SRV[key === 'price' ? 'price' : 'headEff'];
       r = X.push([lbl, '', '', R(val), note, '']);
       CR[key] = r;
       X.mg(r,0,r,2); X.mg(r,4,r,5);
@@ -4307,7 +4375,7 @@ function buildSummarySheet(base, cmp, cin, det, cmpRef) {
 
 // ── ② 산정내역 시트 — 세로 전환 (항목=행, 업무=열) ──────────
 function buildDetailSheet(base, cin) {
-  const { welfare, fixed, results, totHead, mgmtR } = base;
+  const { welfare, fixed, results, totHead, mgmtR, fxTotal, fxMgmt, fxBill, grandTot } = base;
   const X = sheetCtx(), n = results.length;
   const C0 = 2, CT = n + 2, NC = n + 3;      // A:항목 B:단위 C~:업무 끝:합계
   const today = new Date().toLocaleDateString('ko-KR');
@@ -4368,6 +4436,23 @@ function buildDetailSheet(base, cin) {
     return r;
   }
   const band = (label, style) => { const r = X.band(label, NC, style, 20); z = 0; return r; };
+
+  // 합계 열(CT)에만 값이 있는 행 — 기타고정비·월 총액처럼 업무에 속하지 않는 월 금액.
+  // rowUnit 에 등록하지 않아 아래 합계열 자동 SUM/SUMPRODUCT 대상에서 빠진다(명시 수식만 얹는다).
+  // 업무별 열은 비워 두되 스타일은 같은 줄 무늬로 칠해 표가 끊겨 보이지 않게 한다.
+  function totRow(label, value, kind = 'data') {
+    const e = z++ % 2;
+    const r = X.push([label, '원', ...Array(n).fill(''), value]);
+    X.st(r, 0, kind === 'grand' ? S.itmGrand : kind === 'sub' ? S.itmBold
+             : kind === 'child' ? (e?S.itmSub1:S.itmSub0) : (e?S.itmTxt1:S.itmTxt0));
+    X.st(r, 1, e?S.unit1:S.unit0);
+    X.stR(r, C0, CT-1, e?S.dataTxt1:S.dataTxt0);
+    X.st(r, CT, kind === 'grand' ? (e?S.grandNum1:S.grandNum0)
+              : kind === 'sub'   ? (e?S.subNum1:S.subNum0)
+              : (e?S.dataNum1:S.dataNum0), WON);
+    X.h(r, 17);
+    return r;
+  }
 
   // ── 제목 ──
   X.band('협력업체 요율산정 — 산정내역', NC, S.title, 34);
@@ -4430,20 +4515,26 @@ function buildDetailSheet(base, cin) {
   RM.wfItems = allWelfareItems().map(it => row(it.lbl, '원/인', () => (it.on ? it.amt : 0), 'child'));
   RM.wfSub   = row('복리후생비 계', '원/인', w => w.wfTotal, 'sub');
 
-  band('④ 기타 고정비 — 월 합계를 전체 인원에 균등 배분 (공통입력 시트 참조)', S.secAmber);
-  const fxDetails = fixed.details.length ? fixed.details : [{ name:'(입력 항목 없음)', amt:0 }];
-  RM.fxItems = fxDetails.map(f =>
-    row(`${f.name || '미입력'} (월 ${fmtn(f.amt)}원)`, '원/인', () => totHead > 0 ? f.amt / totHead : 0, 'child'));
-  RM.fxSub = row('기타고정비 계', '원/인', w => w.fxPerPerson, 'sub');
-
-  band('⑤ 청구 단가 산출', S.secBlue);
-  RM.netPer     = row('1인 순비용 (①+②+③+④)',            '원/인', w => w.netPer, 'sub');
+  band('1인 청구단가 산출 — (①+②+③) × (1+관리비율)', S.secBlue);
+  RM.netPer     = row('1인 순비용 (①+②+③)',              '원/인', w => w.netPer, 'sub');
   RM.mgmt       = row(`관리비 (${(mgmtR * 100).toFixed(2)}%)`, '원/인', w => w.mgmt);
   RM.finPer     = row('1인 청구단가',                        '원/인', w => w.finPer, 'grand');
   RM.hBill      = row('시간당 단가',                         '원/h',  w => w.hBill);
   RM.headAgain  = row('× 인원',                              '명',    w => w.headcount, 'data', NUM);
   RM.sub        = row('월 소계',                             '원',    w => w.sub, 'grand');
-  const lastRow = RM.sub;
+
+  // ④ 기타고정비 — 1인 단가에 배분하지 않는 월 정액. 관리비율을 붙여 업무와 따로 청구한다.
+  //   값은 합계 열(CT)에만 둔다. 인원이 0이면 엔진과 같이 관리비·청구액을 0으로 둔다.
+  band('④ 기타 고정비 — 월 정액 · 별도 청구 (관리비율 적용, 공통입력 시트 참조)', S.secAmber);
+  const fxDetails = fixed.details.length ? fixed.details : [{ name:'(입력 항목 없음)', amt:0 }];
+  RM.fxItems = fxDetails.map(f => totRow(f.name || '미입력', f.amt, 'child'));
+  RM.fxTot   = totRow('기타고정비 계',                                fxTotal, 'sub');
+  RM.fxMgmt  = totRow(`관리비 (${(mgmtR * 100).toFixed(2)}%)`,         fxMgmt);
+  RM.fxBill  = totRow('기타고정비 청구액',                            fxBill, 'grand');
+
+  band('월 총액 — Σ 월 소계 + 기타고정비 청구액', S.secBlue);
+  RM.grand   = totRow('월 총액',                                      grandTot, 'grand');
+  const lastRow = RM.grand;
 
   // ── 수식 오버레이 — 업무별 열(C0..CT-1)에 실제 셀 참조 수식을 얹는다 ──
   const lastCol = colL(CT - 1), firstCol = colL(C0);
@@ -4474,12 +4565,7 @@ function buildDetailSheet(base, cin) {
     });
     X.fx(RM.wfSub, c, `SUM(${cl}${RM.wfItems[0]+1}:${cl}${RM.wfItems[RM.wfItems.length-1]+1})`);
 
-    RM.fxItems.forEach((rowIdx, fi) => {
-      X.fx(rowIdx, c, `${xref('공통입력', cin.fixed[fi], 1)}/$${colL(CT)}$${RM.head+1}`);
-    });
-    X.fx(RM.fxSub, c, `SUM(${cl}${RM.fxItems[0]+1}:${cl}${RM.fxItems[RM.fxItems.length-1]+1})`);
-
-    X.fx(RM.netPer, c, `${cl}${RM.wSub+1}+${cl}${RM.lSub+1}+${cl}${RM.wfSub+1}+${cl}${RM.fxSub+1}`);
+    X.fx(RM.netPer, c, `${cl}${RM.wSub+1}+${cl}${RM.lSub+1}+${cl}${RM.wfSub+1}`);
     X.fx(RM.mgmt,   c, `${cl}${RM.netPer+1}*${rateOf('mgmtRate')}/100`);
     X.fx(RM.finPer, c, `${cl}${RM.netPer+1}+${cl}${RM.mgmt+1}`);
     X.fx(RM.hBill,  c, `IF(${cl}${RM.hReg+1}>0,${cl}${RM.finPer+1}/${cl}${RM.hReg+1},0)`);
@@ -4498,13 +4584,21 @@ function buildDetailSheet(base, cin) {
     X.fx(rr, CT, f);
   });
 
+  // ── ④ 기타고정비 · 월 총액 — 합계 열(CT) 명시 수식 (위 자동 수식 대상 아님) ──
+  const ct = colL(CT), headTot = `${ct}${RM.head+1}`;
+  RM.fxItems.forEach((rowIdx, fi) => X.fx(rowIdx, CT, xref('공통입력', cin.fixed[fi], 1)));
+  X.fx(RM.fxTot,  CT, `SUM(${ct}${RM.fxItems[0]+1}:${ct}${RM.fxItems[RM.fxItems.length-1]+1})`);
+  X.fx(RM.fxMgmt, CT, `IF(${headTot}>0,${ct}${RM.fxTot+1}*${rateOf('mgmtRate')}/100,0)`);
+  X.fx(RM.fxBill, CT, `IF(${headTot}>0,${ct}${RM.fxTot+1}+${ct}${RM.fxMgmt+1},0)`);
+  X.fx(RM.grand,  CT, `${ct}${RM.sub+1}+${ct}${RM.fxBill+1}`);
+
   // ── 주석 ──
   X.push(); X.h(X.rows - 1, 6);
   // 주석은 병합폭(한글 기준 대략 글자수)에 맞춰 줄 수를 계산해 높이를 준다 — 안 그러면 잘린다
   const wW = n <= 6 ? 15 : n <= 10 ? 13 : 11;
   const noteW = Math.floor((24 + 8 + n * wW + 17) / 2);
   [ '※ 연장·야간수당은 근로기준법 제56조에 따른 가산분(0.5)만 계상했습니다. 휴일수당은 "휴일 정액 적용"이 1이면 정액단가×휴일시간, 0이면 가산분(0.5)입니다.',
-    `※ 기타 고정비는 월 합계를 전체 인원(${totHead}명)으로 균등 배분한 금액입니다.`,
+    '※ 기타 고정비는 1인 청구단가에 넣지 않는 월 정액입니다. 관리비율을 붙여 업무와 따로 청구하며, 월 총액 = 업무 월 소계 합 + 기타고정비 청구액입니다.',
     "※ 전체 합계 열 — '원/인'은 값×인원의 합, '원'·'명'은 단순 합, 'h'·'일'·'%'·'원/h'는 인원 가중평균(회색 표기)입니다.",
     '※ 항목 순서가 곧 산식 순서입니다. 정렬하지 마세요 (단위 열 필터는 사용 가능).',
     '※ 노란 배경 칸(근무조건 7개)만 직접 입력하세요 — 나머지는 전부 수식으로 자동 계산됩니다.',
@@ -4540,6 +4634,24 @@ function buildCmpSheet(cmp, cin, det) {
     + `IF(${diffRef}/${mineRef}<=-0.05,"절감","동등"))))`;
   let r;
 
+  // ── 캐시값(리터럴)을 수식과 같은 계산 경로로 미리 만든다 ──
+  //   수식은 업무별 금액을 ROUND 한 뒤 합·차·비율을 내므로, 리터럴도 반올림한 값에서 출발해야
+  //   엑셀 재계산 전(미리보기·뷰어)과 후의 숫자가 1원·미세 비율까지 같다.
+  const rv = cmp.rows.map(x => ({ mU: R(x.mineUnit), vU: R(x.vUnit), mT: R(x.mineTot), vT: R(x.vTot),
+                                  mH: x.mineHead, vH: x.vHead }));
+  const liveRv = rv.filter(v => v.vU > 0);                       // 수식의 SUMIF(업체 1인단가>0) 마스크와 같은 기준
+  const sumRv  = f => liveRv.reduce((s, v) => s + f(v), 0);
+  const tv = { mH: sumRv(v => v.mH), vH: sumRv(v => v.vH), mT: sumRv(v => v.mT), vT: sumRv(v => v.vT) };
+  const pctOf = (mine, ven) => mine > 0 ? (ven - mine) / mine * 100 : '';   // IF(B>0,D/B*100,"") 와 동일
+  const SRV = {                                                  // 종합요약 값 — 요약 시트도 이 값을 그대로 쓴다
+    head:    { mine: tv.mH, ven: tv.vH },
+    avg:     { mine: R(tv.mH > 0 ? tv.mT / tv.mH : 0), ven: R(tv.vH > 0 ? tv.vT / tv.vH : 0) },
+    monthly: { mine: tv.mT, ven: tv.vT },
+    annual:  { mine: R(tv.mT * 12), ven: R(tv.vT * 12) },
+    price:   R(sumRv(v => (v.vU - v.mU) * v.mH)),
+    headEff: R(sumRv(v => (v.vH - v.mH) * v.vU)),
+  };
+
   // ── 제목 ──
   r = X.push([`산정안 비교 — 내 산정 vs ${cmp.vendorName || '업체'}`]);
   X.mg(r,0,r,NC-1); X.stR(r,0,NC-1, S.title);
@@ -4561,12 +4673,13 @@ function buildCmpSheet(cmp, cin, det) {
 
   const SR = {}; // 종합요약 각 행 인덱스
   [
-    ['전체 인원(명)',      t.mineHead,          t.vHead,          NUM, false, headD.level,    headD.ratio, 'head'],
-    ['1인 평균 단가(원)',  R(myAvg),            R(vAvg),          WON, false, avgD.level,     avgD.ratio, 'avg'],
-    ['월 청구 총액(원)',   R(t.mineMonthly),    R(t.vMonthly),    WON, true,  t.monthlyLevel, t.monthlyRatio, 'monthly'],
-    ['연간 환산 금액(원)', R(t.mineMonthly*12), R(t.vMonthly*12), WON, true,  t.monthlyLevel, t.monthlyRatio, 'annual'],
-  ].forEach(([lbl, mine, ven, z, grand, lv, rt, key]) => {
-    r = X.push([lbl, mine, ven, ven - mine, P(rt)]);
+    ['전체 인원(명)',      NUM, false, headD.level,    'head'],
+    ['1인 평균 단가(원)',  WON, false, avgD.level,     'avg'],
+    ['월 청구 총액(원)',   WON, true,  t.monthlyLevel, 'monthly'],
+    ['연간 환산 금액(원)', WON, true,  t.monthlyLevel, 'annual'],
+  ].forEach(([lbl, z, grand, lv, key]) => {
+    const { mine, ven } = SRV[key];
+    r = X.push([lbl, mine, ven, ven - mine, pctOf(mine, ven)]);
     SR[key] = r;
     if (grand) { X.st(r,0,S.grandLbl); X.st(r,1,S.grandVal,z); X.st(r,2,S.grandVal,z); }
     else       { X.st(r,0,S.sumLbl);   X.st(r,1,S.sumVal,z);   X.st(r,2,S.sumVal,z);   }
@@ -4574,10 +4687,10 @@ function buildCmpSheet(cmp, cin, det) {
   });
 
   // 월 차이 = 단가 효과 + 인원 효과
-  [['차이 요인 · 단가 효과(원)', t.priceEffect, '(업체 단가 − 내 단가) × 내 인원', 'price'],
-   ['차이 요인 · 인원 효과(원)', t.headEffect,  '(업체 인원 − 내 인원) × 업체 단가', 'headEff']]
+  [['차이 요인 · 단가 효과(원)', SRV.price,   '(업체 단가 − 내 단가) × 내 인원', 'price'],
+   ['차이 요인 · 인원 효과(원)', SRV.headEff, '(업체 인원 − 내 인원) × 업체 단가', 'headEff']]
   .forEach(([lbl, val, note, key]) => {
-    r = X.push([lbl, '', '', R(val), note]);
+    r = X.push([lbl, '', '', val, note]);
     SR[key] = r;
     X.mg(r,0,r,2); X.stR(r,0,2, S.sumLbl);
     X.st(r,3, DS[val > 0 ? 'over' : val < 0 ? 'under' : 'eq'], WON);
@@ -4598,9 +4711,10 @@ function buildCmpSheet(cmp, cin, det) {
   const cmpRows = [];
   cmp.rows.forEach((x, i) => {
     const e = i % 2, txt = e?S.dataTxt1:S.dataTxt0, num = e?S.dataNum1:S.dataNum0, sub = e?S.subNum1:S.subNum0;
+    const v = rv[i];
     r = X.push([x.name, x.shiftLbl, x.mineHead, x.vHead,
-                R(x.mineUnit), R(x.vUnit), R(x.unitDiff),
-                R(x.mineTot), R(x.vTot), R(x.totDiff), P(x.totRatio),
+                v.mU, v.vU, v.vU - v.mU,
+                v.mT, v.vT, v.vT - v.mT, pctOf(v.mT, v.vT),
                 x.mode === 'detail' ? '상세' : '간편']);
     cmpRows.push(r);
     X.st(r,0,txt); X.st(r,1,txt);
@@ -4614,8 +4728,8 @@ function buildCmpSheet(cmp, cin, det) {
   });
 
   const lastDataRow = X.rows - 1;   // 자동필터에서 합계 행을 제외하기 위한 경계
-  r = X.push(['전체 합계','', t.mineHead, t.vHead, '', '', '',
-              R(t.mineMonthly), R(t.vMonthly), R(t.monthlyDiff), P(t.monthlyRatio), '']);
+  r = X.push(['전체 합계','', tv.mH, tv.vH, '', '', '',
+              tv.mT, tv.vT, tv.vT - tv.mT, pctOf(tv.mT, tv.vT), '']);
   const totalRow = r;
   X.st(r,0,S.totTxt); X.st(r,1,S.totEmpty);
   X.st(r,2,S.totNum,NUM); X.st(r,3,S.totNum,NUM);
@@ -4639,9 +4753,12 @@ function buildCmpSheet(cmp, cin, det) {
   } else {
     r = X.push(['항목','내 산정(원)','업체(원)','차이(원)','차이율(%)','판정']);
     X.stR(r,0,5, S.colHdrSm);
+    let sM = 0, sV = 0;                       // 합계 = 반올림된 항목값의 합 (수식 SUM 과 같은 경로)
     t.items.forEach((it, i) => {
       const e = i % 2;
-      r = X.push([it.lbl, R(it.mine), R(it.vendor), R(it.diff), P(it.ratio), CMP_LBL[it.level]]);
+      const iM = R(it.mine), iV = R(it.vendor);
+      sM += iM; sV += iV;
+      r = X.push([it.lbl, iM, iV, iV - iM, pctOf(iM, iV), CMP_LBL[levelOf(iV - iM, iM)]]);
       itemRows.push({ row:r, key: it.key });
       X.st(r,0, e?S.dataTxt1:S.dataTxt0);
       X.st(r,1, e?S.dataNum1:S.dataNum0, WON);
@@ -4650,9 +4767,7 @@ function buildCmpSheet(cmp, cin, det) {
       X.st(r,4, DS[it.level], PCT);
       X.st(r,5, DC[it.level]);
     });
-    const sm = t.items.reduce((a, i) => ({ m:a.m + i.mine, v:a.v + i.vendor }), { m:0, v:0 });
-    const td = mkDiff('t', '합계', sm.m, sm.v);
-    r = X.push(['합계', R(td.mine), R(td.vendor), R(td.diff), P(td.ratio), CMP_LBL[td.level]]);
+    r = X.push(['합계', sM, sV, sV - sM, pctOf(sM, sV), CMP_LBL[levelOf(sV - sM, sM)]]);
     itemTotalRow = r;
     X.st(r,0,S.totTxt);
     X.st(r,1,S.totNum,WON); X.st(r,2,S.totNum,WON); X.st(r,3,S.totNum,WON);
@@ -4690,7 +4805,11 @@ function buildCmpSheet(cmp, cin, det) {
   SUB.vat    = subRow('부가세(원)',              x => gv(`v_vat_${x.id}`));
 
   // ── 수식 오버레이 ──
-  function mineExpr(c2) { return `(${D(det.finPer,c2)}*(1+${CN('vatOn')}*${CN('vatRate')}/100))`; }
+  // 고정비 배분 환산 — 업체 견적은 고정비를 1인에 배분해 적어 오므로 비교에서만 1인에 얹는다(화면 compareAll 과 동일).
+  //   fxPerExpr = 고정비 합계 ÷ 전체 인원 · mineSupExpr = 1인 청구단가 + fxPer × (1+관리비율)
+  const fxPerExpr = `(IF(${D(det.head,det.CT)}>0,${D(det.fxTot,det.CT)}/${D(det.head,det.CT)},0))`;
+  function mineSupExpr(c2) { return `(${D(det.finPer,c2)}+${fxPerExpr}*(1+${CN('mgmtRate')}/100))`; }
+  function mineExpr(c2) { return `(${mineSupExpr(c2)}*(1+${CN('vatOn')}*${CN('vatRate')}/100))`; }
   // ★ 항상 괄호로 감싼 채 반환 — 이 값은 곧잘 뒤에 "*인원"이 붙는데, 덧셈식을 괄호 없이
   //   이어붙이면 곱셈이 부가세 항에만 걸려버리는(연산자 우선순위) 실수를 원천 차단한다.
   function vExpr(mode, c) {
@@ -4747,8 +4866,9 @@ function buildCmpSheet(cmp, cin, det) {
       const MINE = {
         base: c2 => D(det.wBase, c2), ot: c2 => D(det.wOT, c2), nt: c2 => D(det.wNt, c2), hol: c2 => D(det.wHol, c2),
         ins:  c2 => `${D(det.lSub,c2)}-${D(det.vRet,c2)}`, ret: c2 => D(det.vRet, c2),
-        wf:   c2 => D(det.wfSub, c2), fx: c2 => D(det.fxSub, c2), mgmt: c2 => D(det.mgmt, c2),
-        vat:  c2 => `${D(det.finPer,c2)}*${CN('vatRate')}/100`,
+        wf:   c2 => D(det.wfSub, c2), fx: () => fxPerExpr,
+        mgmt: c2 => `${D(det.mgmt,c2)}+${fxPerExpr}*${CN('mgmtRate')}/100`,
+        vat:  c2 => `${mineSupExpr(c2)}*${CN('vatRate')}/100`,
       };
       const VEND = {
         base: c => A1(SUB.base,c), ot: c => A1(SUB.ot,c), nt: c => A1(SUB.nt,c), hol: c => A1(SUB.hol,c),
@@ -4789,7 +4909,7 @@ function buildCmpSheet(cmp, cin, det) {
       { rowH:18,
         filter : X.ref(hdrRow, 0, lastDataRow, 11),
         margins: { left:0.25, right:0.25, top:0.4, bottom:0.4, header:0.2, footer:0.2 } }),
-    ref: { cmpRows, totalRow, SR, SUB, SC0, n },
+    ref: { cmpRows, totalRow, SR, SRV, SUB, SC0, n },
   };
 }
 

@@ -50,7 +50,7 @@ section('[2] 계산 엔진 — 산식 불변');
 
   // 합계 항등식
   const g = win.computeAll();
-  const agg = win.aggCost(g.results);
+  const agg = win.aggCost(g);
   const sum = Object.values(agg).reduce((a, b) => a + b, 0);
   ok('★ 비용 7분류 합 = 월 총액', near(sum, g.grandTot, 1e-9), `${Math.round(sum)} vs ${Math.round(g.grandTot)}`);
 }
@@ -1022,6 +1022,110 @@ section('[13-2] 적용률 × 단가표 · 저장 · 산출물');
   win.setRateMode(1, false);
   win.copyResult();
   ok('안 쓰면 클립보드에 안 나옴', !copied.includes('기준 27,500원'));
+}
+
+// ────────────────────────────────────────────────────────────
+section('[15] 기타고정비 분리 (T1103-01) — 별도 월 정액 · 관리비율 적용');
+{
+  const A = load();
+  const { win, doc } = A;
+  const fmt = win.eval('fmt');   // const 선언이라 window 속성이 아니다
+  // 업무 2건 + 고정비 2항목
+  A.set('wName_1', '경비'); A.set('wRate_1', 11000); A.set('wHead_1', 3);
+  win.addWork({ name: '미화', hourlyRate: 10500, headcount: 2 });
+  win.addFixed(); win.addFixed();
+  const fxIds = [...doc.querySelectorAll('[id^="fxAmt_"]')].map(e => e.id.replace('fxAmt_', ''));
+  fxIds.forEach((i, k) => { A.set(`fxName_${i}`, `고정${k}`); A.set(`fxAmt_${i}`, k ? '120,000' : '330,000'); });
+  A.set('mgmtRate', 10);
+  win.calculate();
+
+  const g = win.computeAll();
+  const m = g.mgmtR;
+  ok('고정비 합계 입력 반영', g.fxTotal > 0, String(g.fxTotal));
+  ok('fxMgmt = fxTotal × 관리비율', near(g.fxMgmt, g.fxTotal * m, 1e-12));
+  ok('fxBill = fxTotal + fxMgmt', near(g.fxBill, g.fxTotal + g.fxMgmt, 1e-12));
+  ok('1인 단가에 고정비 없음 (netPer = 인건비+법정+복리)',
+     g.results.every(r => near(r.netPer, r.wSub + r.lSub + r.wfTotal, 1e-12)));
+  ok('결과 필드 fxPerPerson 제거', g.results.every(r => !('fxPerPerson' in r)));
+  ok('시간당 단가 = finPer / 기본급 대상 시간',
+     g.results.every(r => near(r.hBill, r.hoursRegular > 0 ? r.finPer / r.hoursRegular : 0, 1e-12)));
+
+  // ★ 현행(배분식) 총액과 동일
+  const legacy = g.results.reduce((s, r) => s + (r.netPer + g.fxTotal / g.totHead) * (1 + m) * r.headcount, 0);
+  ok('★ grandTot = 종전 배분식 총액', near(g.grandTot, legacy, 1e-9), `${g.grandTot} vs ${legacy}`);
+  ok('★ grandTot = Σ sub + fxBill', near(g.grandTot, g.results.reduce((s, r) => s + r.sub, 0) + g.fxBill, 1e-12));
+
+  // ★ Σ aggCost === grandTot · 고정비 분류 = fxTotal
+  const agg = win.aggCost(g);
+  ok('★ Σ aggCost = grandTot', near(Object.values(agg).reduce((a, b) => a + b, 0), g.grandTot, 1e-9));
+  ok('aggCost.fx = fxTotal', near(agg.fx, g.fxTotal, 1e-12));
+
+  // ★ 증원: 다른 업무 finPer 불변, 증가액 = finPer × 증가 인원
+  const fin0 = g.results.map(r => r.finPer);
+  A.set('wHead_1', 5); win.calculate();
+  const g2 = win.computeAll();
+  ok('★ 증원해도 모든 업무 finPer 불변', g2.results.every((r, i) => near(r.finPer, fin0[i], 1e-12)));
+  ok('★ 총액 증가 = finPer × 증가 인원', near(g2.grandTot - g.grandTot, fin0[0] * 2, 1e-9),
+     `${g2.grandTot - g.grandTot} vs ${fin0[0] * 2}`);
+  A.set('wHead_1', 3); win.calculate();
+
+  // 화면 — 결과표 고정비 행 · 합계 · 상세 아코디언 · 공통비용
+  ok('결과표에 기타고정비 행', !!A.$('workFxRow') && A.$('workFxRow').textContent.includes('기타고정비'));
+  ok('결과표 합계 = grandTot', A.txt('r_grand') === fmt(g.grandTot), A.txt('r_grand'));
+  ok('아코디언에 "1인 배분" 행 없음', !A.$('workDetailAccordion').textContent.includes('1인 배분'));
+  ok('공통비용에 "÷ N명" 배분 표기 없음', !/÷\s*\d+명/.test(A.$('fx_det').textContent), A.$('fx_det').textContent);
+  ok('공통비용 청구액 = fxBill', A.txt('r_fx_bill') === fmt(g.fxBill));
+  ok('공통비용 관리비 = fxMgmt', A.txt('r_fx_mgmt') === fmt(g.fxMgmt));
+
+  // 클립보드
+  let copied = '';
+  win.copyText = t => { copied = t; return Promise.resolve(); };
+  win.copyResult();
+  const iFx = copied.indexOf('[기타고정비]'), iTot = copied.indexOf('[전체 합계]');
+  ok('클립보드: 전체 합계 앞에 기타고정비 청구액', iFx >= 0 && iFx < iTot && copied.includes(fmt(g.fxBill)));
+
+  // ★ 견적 비교 — 배분 환산 기준으로 현행과 동일
+  A.check('cmpVatOn', true); A.set('cmpVatRate', 10);
+  g.results.forEach(r => A.set(`v_unit_${r.id}`, '3,000,000'));
+  g.results.forEach(r => A.set(`v_head_${r.id}`, r.headcount));
+  const cmp = win.compareAll(win.computeAll());
+  const fxPer = g.fxTotal / g.totHead;
+  const legacyUnit = r => (r.netPer + fxPer) * (1 + m);
+  ok('비교 내 1인 공급가 = 종전 단가', cmp.rows.every((x, i) => near(x.mineSupply, legacyUnit(g.results[i]), 1e-12)));
+  ok('비교 내 단가(VAT 포함) = 종전', cmp.rows.every((x, i) => near(x.mineUnit, legacyUnit(g.results[i]) * 1.1, 1e-12)));
+  const itm = (x, k) => x.items.find(it => it.key === k).mine;
+  ok('비교 항목 기타고정비 = fxPer', cmp.rows.every(x => near(itm(x, 'fx'), fxPer, 1e-12)));
+  ok('비교 항목 관리비 = (netPer + fxPer) × m',
+     cmp.rows.every((x, i) => near(itm(x, 'mgmt'), (g.results[i].netPer + fxPer) * m, 1e-12)));
+  ok('비교 항목 부가세 = 비교용 단가 × VAT', cmp.rows.every((x, i) => near(itm(x, 'vat'), legacyUnit(g.results[i]) * 0.1, 1e-12)));
+  const supItems = cmp.rows.every(x => near(x.items.filter(it => it.key !== 'vat').reduce((s, it) => s + it.mine, 0), x.mineSupply, 1e-9));
+  ok('비교 항목 합 = 비교용 공급가', supItems);
+  A.check('cmpVatOn', false); win.calculate();
+  const cmp2 = win.compareAll(win.computeAll());
+  ok('★ (VAT 제외) Σ 비교용 mineTot = grandTot', near(cmp2.tot.mineMonthly, win.computeAll().grandTot, 1e-9),
+     `${cmp2.tot.mineMonthly} vs ${win.computeAll().grandTot}`);
+
+  // 인상률 시뮬 — 고정비 인상은 fxTotal 에 그대로
+  const before = win.computeAll().grandTot;
+  const simF = win.computeAll({ rate:0, wf:0, fx:10, mgmt:0 });
+  ok('고정비 +10% 시뮬 = fxTotal×0.1×(1+m) 증가', near(simF.grandTot - before, g.fxTotal * 0.1 * (1 + m), 1e-9));
+
+  // 저장/복원 — 스키마 불변, 금액 동일
+  const snap = win.collectState();
+  ok('저장 스키마에 고정비 신규 키 없음', !('fxBill' in snap) && !('fxMgmt' in snap));
+  win.applyState(JSON.parse(JSON.stringify(snap)));
+  ok('복원 후 grandTot 동일', near(win.computeAll().grandTot, before, 1e-9));
+
+  // ★ totHead = 0 → 총액 0, 고정비 행 숨김
+  //   인원 칸은 최소 1명으로 읽히므로(collectWorks) 인원 0 은 「업무 0건」일 때만 생긴다
+  win.workIdsInOrder().forEach(i => win.removeWork(i));
+  win.calculate();
+  const z = win.computeAll();
+  ok('★ totHead=0 이면 grandTot=0', z.totHead === 0 && z.grandTot === 0, String(z.grandTot));
+  ok('totHead=0 이면 fxMgmt·fxBill = 0', z.fxMgmt === 0 && z.fxBill === 0);
+  ok('fxBill=0 이면 결과표 고정비 행 숨김', !A.$('workFxRow'));
+  ok('totHead=0 이면 Σ aggCost = 0', Object.values(win.aggCost(z)).reduce((a, b) => a + b, 0) === 0);
+  ok('스크립트 에러 없음', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
 }
 
 // ────────────────────────────────────────────────────────────
